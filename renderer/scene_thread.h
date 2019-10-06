@@ -68,6 +68,7 @@ public:
 	SceneThread(RendererCommon& renderer_common)
 		: BaseOngoingThread<ST_MSG>(renderer_common)
 	{
+		tick_index_ = 1;
 		mesh_free_slots_.set();
 	}
 

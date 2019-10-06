@@ -17,7 +17,6 @@ public:
 	virtual IDXGISwapChain3* GetSwapChain() const = 0;
 
 	const WCHAR* GetTitle() const { return L"SceneEngine"; }
-	std::wstring GetAssetFullPath(LPCWSTR asset_name) const;
 	void SetCustomWindowText(LPCWSTR text);
 
 protected:    

@@ -1,11 +1,5 @@
 #pragma once
 
-#include <DirectXMath.h>
-#include <DirectXCollision.h>
-#include <wrl.h>
-#include <cstddef>
-#include <unordered_map>
-
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
@@ -48,9 +42,17 @@ struct RawTextureData
 
 };
 
+struct RawVertexData
+{
+	XMFLOAT3 position;
+	XMFLOAT3 normal;
+	XMFLOAT2 texcoord;
+};
+
 struct RawMeshData
 {
-
+	std::vector<uint32_t> indices;
+	std::vector<RawVertexData> vertexes;
 };
 
 struct InstanceData
@@ -74,9 +76,11 @@ struct RendererCommon
 	ComPtr<IDXGISwapChain3> swap_chain_;
 	ComPtr<ID3D12Device> device_;
 	ComPtr<ID3D12CommandQueue> direct_command_queue_;
+
 	ComPtr<ID3D12Fence> direct_queue_fence_;
 	ComPtr<ID3D12Fence> update_queue_fence_;
 	ComPtr<ID3D12Fence> loading_queue_fence_;
+
 	const class RenderThread*	render_thread_		= nullptr;
 	const class SceneThread*	scene_thread_		= nullptr;
 	const class MoveableThread*	moveable_thread_	= nullptr;
@@ -84,6 +88,8 @@ struct RendererCommon
 	BOOL tearing_supported_ = false;
 	uint32_t width = 1280;
 	uint32_t height = 720;
+
+	std::wstring base_shader_path;
 
 	FenceValue GetLastUnfinishedFrameRT() const;
 	FenceValue GetLastUnfinishedFrameMT() const;

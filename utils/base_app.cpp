@@ -42,11 +42,6 @@ BaseApp::BaseApp()
 	assets_path_ += L"../../SceneEngine/";
 }
 
-std::wstring BaseApp::GetAssetFullPath(LPCWSTR asset_name) const
-{
-    return assets_path_ + asset_name;
-}
-
 void BaseApp::SetCustomWindowText(LPCWSTR text)
 {
 	std::wstring full_title = GetTitle();
@@ -133,10 +128,6 @@ LRESULT CALLBACK Win32Application::WindowProc(HWND hWnd, UINT message, WPARAM wP
 		if (app) app->OnKeyUp(static_cast<UINT8>(wParam));
 		return 0;
 
-	case WM_PAINT:
-		//if (app) app->Tick();
-		return 0; //Ignore we redraw all whenever possible
-
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
@@ -149,6 +140,10 @@ LRESULT CALLBACK Win32Application::WindowProc(HWND hWnd, UINT message, WPARAM wP
 			return 0;
 		}
 		break;
+
+	//case WM_PAINT:
+		//if (app) app->Tick();
+		//return 0; //Ignore we redraw all whenever possible
 	}
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }

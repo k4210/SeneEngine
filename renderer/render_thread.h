@@ -25,6 +25,8 @@ class RenderThread : public BaseOngoingThread<RT_MSG>
 {
 	struct RTPimpl* pimpl_ = nullptr;
 
+	HANDLE fence_event_ = nullptr;
+
 	void Tick();
 	void MainLoop() { while (!exit_requested_) { Tick(); } }
 

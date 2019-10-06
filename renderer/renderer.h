@@ -23,7 +23,7 @@ public:
 		common_.moveable_thread_ = &moveable_thread_;
 	}
 
-	void Init(HWND window_handle, UINT width, UINT height);
+	void Init(HWND window_handle, UINT width, UINT height, std::wstring base_shader_path);
 	void Destroy();
 	
 	void Start();

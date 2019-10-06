@@ -32,8 +32,10 @@ namespace {
 	}
 }
 
-void Renderer::Init(HWND hwnd, UINT width, UINT height)
+void Renderer::Init(HWND hwnd, UINT width, UINT height, std::wstring base_shader_path)
 {
+	common_.base_shader_path = base_shader_path;
+
 	common_.width = width;
 	common_.height = height;
 
@@ -90,28 +92,31 @@ void Renderer::Init(HWND hwnd, UINT width, UINT height)
 		ThrowIfFailed(swap_chain.As(&common_.swap_chain_));
 	}
 
-	ThrowIfFailed(common_.device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&common_.direct_queue_fence_)));
+	ThrowIfFailed(common_.device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&common_.direct_queue_fence_ )));
+	ThrowIfFailed(common_.device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&common_.update_queue_fence_ )));
+	ThrowIfFailed(common_.device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&common_.loading_queue_fence_)));
 
 	render_thread_.Create();
+	moveable_thread_.Create();
+	scene_thread_.Create();
 }
 
 void Renderer::Destroy()
 {
-	//WaitForGpu();
-
 	if (!common_.tearing_supported_)
 	{
-		// Fullscreen state should always be false before exiting the app.
 		ThrowIfFailed(common_.swap_chain_->SetFullscreenState(FALSE, nullptr));
 	}
 
-	//CloseHandle(m_fenceEvent);
+	render_thread_.Destroy();
+	moveable_thread_.Destroy();
+	scene_thread_.Destroy();
 }
 
 void Renderer::Start()
 {
-	scene_thread_.Start();
-	moveable_thread_.Start();
+	//scene_thread_.Start();
+	//moveable_thread_.Start();
 	render_thread_.Start();
 }
 

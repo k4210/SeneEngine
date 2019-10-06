@@ -28,6 +28,6 @@ public:
 		: BaseOngoingThread<MT_MSG>(renderer_common) {}
 
 	void Start() { InnerStart(&MoveableThread::MainLoop, this); }
-	void Create();
-	void Destroy();
+	void Create() {}
+	void Destroy() {}
 };

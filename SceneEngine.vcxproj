@@ -101,9 +101,12 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PrecompiledHeaderOutputFile>$(IntDir)stdafx.pch</PrecompiledHeaderOutputFile>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -138,31 +141,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="engine\engine.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="renderer\moveable_thread.cpp" />
-    <ClCompile Include="renderer\renderer.cpp" />
-    <ClCompile Include="renderer\render_thread.cpp" />
-    <ClCompile Include="renderer\scene_thread.cpp" />
+    <ClCompile Include="systems\renderer\private\renderer.cpp" />
     <ClCompile Include="utils\base_app.cpp" />
     <ClCompile Include="utils\stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\shaders.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="engine\engine.h" />
-    <ClInclude Include="renderer\moveable_thread.h" />
-    <ClInclude Include="renderer\renderer.h" />
-    <ClInclude Include="renderer\render_common.h" />
-    <ClInclude Include="renderer\render_thread.h" />
-    <ClInclude Include="renderer\scene_thread.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="systems\renderer\renderer_interface.h" />
     <ClInclude Include="utils\base_app.h" />
     <ClInclude Include="utils\base_app_helper.h" />
+    <ClInclude Include="utils\base_system.h" />
     <ClInclude Include="utils\d3dx12.h" />
+    <ClInclude Include="utils\mpsc_queue.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

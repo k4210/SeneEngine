@@ -19,9 +19,9 @@
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers.
 #endif
 
-#include "bitset2/bitset2.hpp"
+#include "third_party/bitset2/bitset2.hpp"
 #include "utils/d3dx12.h"
-#include "concurrentqueue/concurrentqueue.h"
+#include "utils/mpsc_queue.h"
 
 #include <windows.h>
 #include <wrl.h>
@@ -43,4 +43,7 @@
 #include <utility>
 #include <unordered_map>
 #include <mutex>
+#include <iostream>
+#include <algorithm>
+
 #include <assert.h>

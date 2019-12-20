@@ -142,18 +142,48 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="systems\data_source\private\data_source.cpp" />
+    <ClCompile Include="systems\gameplay\private\gameplay.cpp" />
     <ClCompile Include="systems\renderer\private\renderer.cpp" />
+    <ClCompile Include="systems\render_data_manager\private\render_data_manager.cpp" />
+    <ClCompile Include="systems\scene_manager\private\scene_manager.cpp" />
     <ClCompile Include="utils\base_app.cpp" />
     <ClCompile Include="utils\stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="systems\data_source\data_source_interface.h" />
+    <ClInclude Include="systems\gameplay\gameplay_interface.h" />
     <ClInclude Include="systems\renderer\renderer_interface.h" />
+    <ClInclude Include="systems\render_data_manager\render_data_manager_interface.h" />
+    <ClInclude Include="systems\scene_manager\scene_manager_interface.h" />
     <ClInclude Include="utils\base_app.h" />
     <ClInclude Include="utils\base_app_helper.h" />
     <ClInclude Include="utils\base_system.h" />
     <ClInclude Include="utils\d3dx12.h" />
     <ClInclude Include="utils\mpsc_queue.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="shaders\draw_ps.hlsl">
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.1</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.1</ShaderModel>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)..\..\SceneEngine\compiled_shaders\debug\draw_ps.h</HeaderFileOutput>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)..\..\SceneEngine\compiled_shaders\release\draw_ps.h</HeaderFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_draw_ps</VariableName>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_draw_ps</VariableName>
+    </FxCompile>
+    <FxCompile Include="shaders\draw_vs.hlsl">
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.1</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.1</ShaderModel>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)..\..\SceneEngine\compiled_shaders\release\draw_vs.h</HeaderFileOutput>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)..\..\SceneEngine\compiled_shaders\debug\draw_vs.h</HeaderFileOutput>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_draw_vs</VariableName>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_draw_vs</VariableName>
+    </FxCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

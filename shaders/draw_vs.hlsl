@@ -5,7 +5,7 @@ struct PSInput
 	float2 tex : TEXCOORD;
 };
 
-PSInput Main(float4 position : POSITION, float4 norm : NORMAL, float2 tex : TEXCOORD)
+PSInput main(float4 position : POSITION, float4 norm : NORMAL, float2 tex : TEXCOORD)
 {
     PSInput result;
     result.position = position;

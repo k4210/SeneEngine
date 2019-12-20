@@ -5,7 +5,7 @@ struct PSInput
 	float2 tex : TEXCOORD;
 };
 
-float4 Main(PSInput input) : SV_TARGET
+float4 main(PSInput input) : SV_TARGET
 {
     return float4(0.8, 0.8, 0.8, 1.0);
 }

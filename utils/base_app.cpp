@@ -140,11 +140,3 @@ LRESULT CALLBACK Win32Application::WindowProc(HWND hWnd, UINT message, WPARAM wP
 	}
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }
-/* Move to renderer
-void Win32Application::ToggleFullscreenWindow(IDXGISwapChain* swap_chain)
-{
-
-
-	fullscreen_ = !fullscreen_;
-}
-*/

@@ -1,4 +1,5 @@
 #pragma once
+#include "third_party/bitset2/bitset2.hpp" 
 
 class IBaseSystem
 {
@@ -60,7 +61,7 @@ protected:
 	
 	void Open() override { CustomOpen(); open_ = true; thread_ = std::thread(&BaseSystemImpl::SystemLoop, this); }
 	bool IsOpen() const override { assert(thread_.joinable() == open_); return open_; }
-	void Close() override { CustomClose(); open_ = false; thread_.join(); }
+	void Close() override { open_ = false; thread_.join(); CustomClose(); }
 public:
 	void EnqueueMsg(TMsg&& msg) { msg_queue_.Enqueue(std::forward<TMsg>(msg)); }
 };
@@ -99,3 +100,97 @@ namespace std
 		}
 	};
 }
+
+template<class T, int N>
+struct PreallocatedContainer
+{
+private:
+	Bitset2::bitset2<N> free_;
+	std::array<T, N> components_;
+	std::mutex mutex_;
+public:
+	PreallocatedContainer()
+	{
+		free_.set();
+	}
+
+	T* UnsafeAllocate()
+	{
+		const auto idx = free_.find_first();
+		if (idx == Bitset2::bitset2<N>::npos)
+			return nullptr;
+		free_.set(idx, false);
+		return &components_[idx];
+	}
+
+	void UnsafeFree(T* component)
+	{
+		assert(component);
+		const auto idx = std::distance(&components_[0], component);
+		assert(idx < N && idx >= 0);
+		assert(!free_.test(idx));
+		free_.set(idx, true);
+	}
+
+	T* Allocate()
+	{
+		std::lock_guard guard(mutex_);
+		return UnsafeAllocate();
+	}
+
+	void Free(T* component)
+	{
+		std::lock_guard guard(mutex_);
+		UnsafeFree(component);
+	}
+};
+
+struct EntityId
+{
+	uint32_t index = 0xffffffff;
+	uint32_t generation = 0xffffffff;
+};
+
+struct Transform
+{
+
+};
+
+/*
+struct Archive
+{
+	// data offset
+	// shared_ptr to DefaultData asset  
+};
+
+
+
+struct ComponentHandle
+{
+	// component ptr <-- How to fill: callback msg or allocate during construction? Or map id, each time? future/promise?
+
+	bool IsValid() const;
+	void Initialize(EntityId, Archive);
+	//void CustomInitialize(EntityId, ...)
+	void CleanUp();
+//optional
+	void UpdateTransform(Transform);
+	void CreateComponent(EntityId);
+};
+
+struct SceneEntity
+{
+	virtual ~SceneEntity() = default;
+
+	void Serialize();
+
+	virtual void Initialize() = 0; //
+	virtual void Cleanup() = 0;
+	virtual void UpdateTransform(Transform) = 0;
+
+	EntityId id;
+	Transform transform;
+	// flags
+	// components
+};
+*/

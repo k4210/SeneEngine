@@ -127,17 +127,25 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>Create</PrecompiledHeader>
+      <PrecompiledHeaderOutputFile>$(IntDir)stdafx.pch</PrecompiledHeaderOutputFile>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -148,6 +156,7 @@
     <ClCompile Include="systems\render_data_manager\private\render_data_manager.cpp" />
     <ClCompile Include="systems\scene_manager\private\scene_manager.cpp" />
     <ClCompile Include="utils\base_app.cpp" />
+    <ClCompile Include="utils\gpu_containers.cpp" />
     <ClCompile Include="utils\stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -161,7 +170,9 @@
     <ClInclude Include="utils\base_app_helper.h" />
     <ClInclude Include="utils\base_system.h" />
     <ClInclude Include="utils\d3dx12.h" />
+    <ClInclude Include="utils\gpu_containers.h" />
     <ClInclude Include="utils\mpsc_queue.h" />
+    <ClInclude Include="utils\small_container.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\draw_ps.hlsl">

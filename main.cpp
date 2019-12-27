@@ -22,6 +22,12 @@ protected:
 
 int main()
 {
+	SampleEntity entity;
+	SmallContainer<float, 1> q1;
+	SmallContainer<float, 2> q2;
+	SmallContainer<float, 3> q3;
+	SmallContainer<float, 4> q4;
+	EntitiUtils::AllComponentsValid(entity);
 	SceneEngine se;
 	return run_application(se, 1280, 720);
 }
@@ -49,7 +55,7 @@ void SceneEngine::OnDestroy()
 	}
 	for (auto& system : systems_)
 	{
-		system->Destroy();
+		system->destroy();
 	}
 	systems_.clear();
 }

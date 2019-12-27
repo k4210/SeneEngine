@@ -1,12 +1,13 @@
 #pragma once
 #include "third_party/bitset2/bitset2.hpp" 
+#include "utils/small_container.h"
 
 class IBaseSystem
 {
 public:
 	virtual void Open() = 0;
 	virtual void Close() = 0;
-	virtual void Destroy() = 0;
+	virtual void destroy() = 0;
 	virtual bool IsOpen() const = 0;
 	//get id..
 	virtual ~IBaseSystem() = default;
@@ -34,7 +35,7 @@ protected:
 	virtual void ThreadCleanUp() {}
 	virtual void CustomOpen() {}
 	virtual void CustomClose() {}
-	void Destroy() override {}
+	void destroy() override {}
 	virtual Microsecond GetMessageBudget() const { return Microsecond{ 7000 }; }
 
 	void HandleMessages()
@@ -138,7 +139,7 @@ public:
 		return UnsafeAllocate();
 	}
 
-	void Free(T* component)
+	void free(T* component)
 	{
 		std::lock_guard guard(mutex_);
 		UnsafeFree(component);
@@ -151,46 +152,82 @@ struct EntityId
 	uint32_t generation = 0xffffffff;
 };
 
+/*
 struct Transform
 {
-
+	XMFLOAT3 translate = XMFLOAT3(0, 0, 0);
+	XMFLOAT4 rotation = XMFLOAT4(0, 0, 0, 1); // quaternion
+	float scale = 1.0f;
 };
 
-/*
 struct Archive
 {
 	// data offset
 	// shared_ptr to DefaultData asset  
 };
-
-
-
-struct ComponentHandle
-{
-	// component ptr <-- How to fill: callback msg or allocate during construction? Or map id, each time? future/promise?
-
-	bool IsValid() const;
-	void Initialize(EntityId, Archive);
-	//void CustomInitialize(EntityId, ...)
-	void CleanUp();
-//optional
-	void UpdateTransform(Transform);
-	void CreateComponent(EntityId);
-};
-
-struct SceneEntity
-{
-	virtual ~SceneEntity() = default;
-
-	void Serialize();
-
-	virtual void Initialize() = 0; //
-	virtual void Cleanup() = 0;
-	virtual void UpdateTransform(Transform) = 0;
-
-	EntityId id;
-	Transform transform;
-	// flags
-	// components
-};
 */
+
+template<typename C> struct ComponentHandleBase
+{
+protected:
+	C* component_ = nullptr;
+
+public:
+	bool IsValid() const { return !!component_; };
+
+	ComponentHandleBase() = default;
+
+	ComponentHandleBase(ComponentHandleBase&& other) : ComponentHandleBase() { std::swap(component_, other.component_); }
+	ComponentHandleBase& operator=(ComponentHandleBase&& other) { std::swap(component_, other.component_); }
+
+	ComponentHandleBase(const ComponentHandleBase&) = delete;
+	ComponentHandleBase& operator=(const ComponentHandleBase&) = delete;
+
+	//EntityId GetEntityId() const;
+	//void Initialize();
+
+	void Cleanup() {}
+	//void UpdateTransform(Transform);
+};
+
+struct EntitiUtils
+{
+	template<typename E> static bool AllComponentsValid(const E& entity)
+	{
+		bool valid = true;
+		auto func = [&valid](const auto& comp) { valid = valid && comp.IsValid(); };
+		const_cast<E&>(entity).ForEachComponent(func);
+		return valid;
+	}
+
+	template<typename E> static void Cleanup(E& entity)
+	{
+		auto func = [](auto& comp) { comp.Cleanup(); };
+		entity.ForEachComponent(func);
+	}
+};
+
+class SampleEntity
+{
+	ComponentHandleBase<uint64_t> field;
+	std::optional<ComponentHandleBase<int32_t>> optional_field;
+	SmallContainer<ComponentHandleBase<float>> vector_field;
+public:
+
+	template<typename F> 
+	void ForEachComponent(F& func)
+	{
+		func(field);
+		if (optional_field)
+		{
+			func(*optional_field);
+		}
+		for (auto& handle : vector_field)
+		{
+			func(handle);
+		}
+	}
+
+	bool Valid() const { return EntitiUtils::AllComponentsValid(*this); }
+	void Cleanup() { EntitiUtils::Cleanup(*this); }
+};

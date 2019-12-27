@@ -1,4 +1,5 @@
 #include "utils/base_system.h"
+#include "utils/gpu_containers.h"
 #include <DirectXMath.h>
 
 struct RendererComponent // <= static mesh
@@ -10,22 +11,21 @@ struct RendererComponent // <= static mesh
 	//flags
 };
 
+namespace Const
+{
+	constexpr uint32_t kFrameCount = 2;
+	constexpr uint32_t kLodNum = 3;
+	constexpr uint32_t kMeshCapacity = 4096;
+	constexpr uint32_t kStaticNodesCapacity = 4096;
+	constexpr uint32_t kStaticInstancesCapacity = 12 * 4096;
+	constexpr uint32_t kMoveableInstancesCapacity = 4 * 4096;
+	constexpr uint32_t kMaxInstancesPerNode = 32;
+	constexpr uint32_t kBuffHeapSize = 4 * kMeshCapacity;
+};
+
 namespace IRenderer
 {
 	using Microsoft::WRL::ComPtr;
-	struct Const
-	{
-		static constexpr uint32_t kInvalid = 0xFFFFFFFF;
-		static constexpr uint64_t kInvalid64 = 0xFFFFFFFFFFFFFFFF;
-		static constexpr uint32_t kFrameCount = 2;
-		static constexpr uint32_t kLodNum = 3;
-		static constexpr uint32_t kMeshCapacity = 4096;
-		static constexpr uint32_t kStaticNodesCapacity = 4096;
-		static constexpr uint32_t kStaticInstancesCapacity = 12 * 4096;
-		static constexpr uint32_t kMoveableInstancesCapacity = 4 * 4096;
-		static constexpr uint32_t kMaxInstancesPerNode = 32;
-		static constexpr uint32_t kBuffHeapSize = 4 * kMeshCapacity;
-	};
 
 	struct RT_MSG_UpdateCamera { DirectX::XMFLOAT3 position; DirectX::XMFLOAT3 direction; };
 	struct RT_MSG_MeshBuffer { CD3DX12_GPU_DESCRIPTOR_HANDLE meshes_buff; uint32_t num_elements = 0; };
@@ -69,33 +69,14 @@ namespace IRenderer
 		CD3DX12_VIEWPORT viewport;
 		CD3DX12_RECT scissor_rect;
 		ComPtr<ID3D12Resource> render_targets[Const::kFrameCount];
+		ComPtr<ID3D12Resource> depth_stencil;
+
 		ComPtr<ID3D12CommandAllocator> command_allocators[Const::kFrameCount];
 		ComPtr<ID3D12DescriptorHeap> rtv_heap;
-
+		ComPtr<ID3D12DescriptorHeap> dsv_heap;
 		
 		uint32_t rtv_descriptor_size = 0;
-		/*
-			ComPtr<ID3D12Fence> direct_queue_fence_;
-			ComPtr<ID3D12Fence> update_queue_fence_;
-			ComPtr<ID3D12Fence> loading_queue_fence_;
-
-			ComPtr<ID3D12Resource> counter_reset_resource_;
-
-			DescriptorHeap buff_heap_;
-
-			const class RenderThread* render_thread_ = nullptr;
-			const class SceneThread* scene_thread_ = nullptr;
-			const class MoveableThread* moveable_thread_ = nullptr;
-
-
-
-			std::wstring base_shader_path;
-
-			FenceValue GetLastUnfinishedFrameRT() const;
-			FenceValue GetLastUnfinishedFrameMT() const;
-			FenceValue GetLastUnfinishedBatch() const;
-			FenceValue GetLastLoadedBatch() const;
-		*/
+		uint32_t dsv_descriptor_size = 0;
 	};
 
 	const RendererCommon* GetRendererCommon();
@@ -114,6 +95,6 @@ public:
 	bool IsValid() const { return component; }
 	EntityId GetEntityId() const;
 	//void Initialize();
-	void Cleanup();
-	void UpdateTransform(Transform);
+	//void Cleanup();
+	//void UpdateTransform(Transform);
 };

@@ -160,6 +160,7 @@
     <ClCompile Include="utils\stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="primitives\mesh_data.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="systems\data_source\data_source_interface.h" />
     <ClInclude Include="systems\gameplay\gameplay_interface.h" />
@@ -171,6 +172,7 @@
     <ClInclude Include="utils\base_system.h" />
     <ClInclude Include="utils\d3dx12.h" />
     <ClInclude Include="utils\gpu_containers.h" />
+    <ClInclude Include="utils\math.h" />
     <ClInclude Include="utils\mpsc_queue.h" />
     <ClInclude Include="utils\small_container.h" />
   </ItemGroup>

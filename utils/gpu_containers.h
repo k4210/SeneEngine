@@ -1,3 +1,5 @@
+#pragma once
+
 #include "d3dx12.h"
 #include <wrl.h>
 #include "base_app_helper.h"
@@ -99,7 +101,7 @@ class UploadBuffer
 public:
 	static uint64_t align(uint64_t uLocation, uint64_t uAlign);
 	void initialize(ID3D12Device* device, uint32_t size);
-	std::optional< uint64_t > data_to_upload(const UINT8* data, uint32_t size, uint32_t alignment);
+	std::optional< uint64_t > data_to_upload(const void* data, uint32_t size, uint32_t alignment);
 	void reset();
 	void destroy();
 	ID3D12Resource* get_resource() { return upload_buffer_.Get(); }
@@ -213,18 +215,17 @@ struct IndexBuffer32 : protected CommitedBuffer
 	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
 	uint32_t size() const { return CommitedBuffer::size(); }
 	void create_views(ID3D12Device*, DescriptorHeap&) {}
-
 };
 
 struct UavCountedBuffer : protected StructBuffer
 {
 protected:
-	uint32_t counter_offset_ = Const::kInvalid;
+	uint64_t counter_offset_ = Const::kInvalid;
 	DescriptorHeapElement uav_;
 
-	static inline uint32_t align_for_uav_counter(uint32_t buffer_size)
+	static inline uint64_t align_for_uav_counter(uint64_t buffer_size)
 	{
-		const uint32_t alignment = D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT;
+		const uint64_t alignment = D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT;
 		return (buffer_size + (alignment - 1)) & ~(alignment - 1);
 	}
 
@@ -234,7 +235,7 @@ public:
 	void initialize(uint32_t capacity, uint32_t element_size) { CommitedBuffer::initialize(capacity, element_size); }
 	void destroy()
 	{
-		counter_offset_ = Const::kInvalid;
+		counter_offset_ = Const::kInvalid64;
 		uav_.release();
 		StructBuffer::destroy();
 	}
@@ -252,12 +253,7 @@ public:
 	uint32_t elements_num() const { return elements_num_; }
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE get_uav_handle() const { return uav_.get_handle(); }
-	uint32_t get_counter_offset() const { return counter_offset_; }
-	void reset_counter(ID3D12GraphicsCommandList* command_list, ID3D12Resource* zero_resource)
-	{
-		assert(get_resource() && zero_resource && command_list);
-		command_list->CopyBufferRegion(get_resource(), counter_offset_, zero_resource, 0, sizeof(uint32_t));
-	}
+	uint64_t get_counter_offset() const { return counter_offset_; }
 };
 
 template<typename Element, typename Buffer> static bool Construct(
@@ -271,13 +267,25 @@ template<typename Element, typename Buffer> static bool Construct(
 {
 	assert(elements && elements_num && device && command_list);
 	out_buffer.initialize(elements_num, sizeof(Element));
-	const auto offset = upload_buffer.data_to_upload(reinterpret_cast<const UINT8*>(elements), out_buffer.size(), alignof(Element));
-	if (!offset.has_value())
-		return false;
+	{
+		const auto offset = upload_buffer.data_to_upload(elements, out_buffer.size(), alignof(Element));
+		if (!offset.has_value())
+		{
+			assert(false);
+			return false;
+		}
+		out_buffer.create_resource(device);
+		out_buffer.create_views(device, descriptor_heap);
+		command_list->CopyBufferRegion(out_buffer.get_resource(), 0, upload_buffer.get_resource(), offset.value(), out_buffer.size());
+	}
 
-	out_buffer.create_resource(device);
-	out_buffer.create_views(device, descriptor_heap);
-	command_list->CopyBufferRegion(out_buffer.get_resource(), 0, upload_buffer.get_resource(), offset.value(), out_buffer.size());
+	if constexpr (std::is_same_v<Buffer, UavCountedBuffer>)
+	{
+		const uint32_t counter_value = elements_num;
+		const auto offset = upload_buffer.data_to_upload(&counter_value, sizeof(uint32_t), alignof(uint32_t));
+		assert(offset.has_value());
+		command_list->CopyBufferRegion(out_buffer.get_resource(), out_buffer.get_counter_offset(), upload_buffer.get_resource(), offset.value(), sizeof(uint32_t));
+	}
 
 	D3D12_RESOURCE_BARRIER barriers[] = { out_buffer.transition_barrier(Buffer::kDefaultState) };
 	command_list->ResourceBarrier(_countof(barriers), barriers);

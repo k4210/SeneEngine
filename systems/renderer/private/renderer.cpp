@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "../renderer_interface.h"
 #include "utils/base_app_helper.h"
+#include "primitives/mesh_data.h"
 
 #ifdef NDEBUG
 #include "compiled_shaders/release/draw_ps.h"
@@ -335,13 +336,22 @@ protected:
 		common_.direct_command_queue.Reset();
 	}
 
-	void destroy() override 
+	void Destroy() override 
 	{
 		if (common_.swap_chain && !common_.tearing_supported)
 		{
 			ThrowIfFailed(common_.swap_chain->SetFullscreenState(FALSE, nullptr));
 		}
 	}
+};
+
+struct IndirectCommand
+{
+	XMFLOAT4X4 world;
+	D3D12_INDEX_BUFFER_VIEW index_buffer;
+	D3D12_VERTEX_BUFFER_VIEW vertex_buffer;
+	XMUINT2 texture_index;
+	D3D12_DRAW_INDEXED_ARGUMENTS draw_arg;
 };
 
 class Renderer : public BaseRenderer
@@ -360,22 +370,6 @@ protected:
 
 public:
 	Renderer(HWND hWnd, uint32_t width, uint32_t height) : BaseRenderer(hWnd, width, height) {}
-
-	struct Vertex
-	{
-		XMFLOAT3 position;
-		XMFLOAT3 normal;
-		XMFLOAT2 texcoord;
-	};
-
-	struct IndirectCommand
-	{
-		XMFLOAT4X4 world;
-		D3D12_INDEX_BUFFER_VIEW index_buffer;
-		D3D12_VERTEX_BUFFER_VIEW vertex_buffer;
-		XMUINT2 texture_index;
-		D3D12_DRAW_INDEXED_ARGUMENTS draw_arg;
-	};
 
 protected:
 	void operator()(RT_MSG_UpdateCamera) {}
@@ -470,7 +464,7 @@ protected:
 			const IndirectCommand indirect_commands[] = {
 				{ XMFLOAT4X4(), index_buffer_.get_index_view(), vertex_buffer_.get_vertex_view(), XMUINT2(), args}
 			};
-			Construct(indirect_draw_commands_, indirect_commands, index_buffer_.elements_num(), common_.device.Get(),
+			Construct(indirect_draw_commands_, indirect_commands, _countof(indirect_commands), common_.device.Get(),
 				command_list_.Get(), upload_buffer_, buffers_heap_);
 		}
 	}

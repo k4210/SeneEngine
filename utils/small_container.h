@@ -1,7 +1,9 @@
+#pragma once
 #include <algorithm>
+#include "third_party/bitset2/bitset2.hpp" 
 
 template<typename T, uint32_t kMinInlineCapacity = 1>
-class SmallContainer
+class small_container
 {
 	using RawData = typename std::aligned_storage<sizeof(T), alignof(T)>::type;
 
@@ -128,5 +130,87 @@ public:
 		return {};
 	}
 
-	~SmallContainer() { reset(); resize_allocation(0); }
+	~small_container() { reset(); resize_allocation(0); }
+};
+
+template<class T, int N>
+struct preallocated_container
+{
+	using RawData = typename std::aligned_storage<sizeof(T), alignof(T)>::type;
+
+private:
+	Bitset2::bitset2<N> free_;
+	std::array<RawData, N> data_;
+	std::mutex mutex_;
+
+public:
+	template<typename ...Args> T* unsafe_allocate(Args&&... args)
+	{
+		const auto idx = free_.find_first();
+		if (idx == Bitset2::bitset2<N>::npos)
+			return nullptr;
+		free_.set(idx, false);
+		return new (&data_[idx]) T(std::forward<Args>(args)...);
+	}
+
+	void unsafe_free(T* item)
+	{
+		assert(item);
+		const auto idx = std::distance(data_, reinterpret_cast<RawData*>(item));
+		assert(idx < N && idx >= 0);
+		assert(!free_.test(idx));
+		free_.set(idx, true);
+		item->~T();
+	}
+
+	bool is_set(const T* item) const
+	{
+		assert(item);
+		const auto idx = std::distance(data_, reinterpret_cast<RawData*>(item));
+		return (idx < N) && (idx >= 0) && !free_.test(idx);
+	}
+
+	template<typename ...Args> T* allocate(Args&&... args)
+	{ 
+		std::lock_guard guard(mutex_); 
+		return unsafe_allocate(std::forward<Args>(args)...);
+	}
+
+	void free(T* component) 
+	{ 
+		std::lock_guard guard(mutex_); 
+		unsafe_free(component);
+	}
+
+	template<typename F> void for_each(F& func)
+	{
+		const auto occupied = ~free_;
+		for (auto idx = occupied.find_first(); idx != Bitset2::bitset2<N>::npos; idx = occupied.find_next(idx))
+		{
+			func(*reinterpret_cast<T*>(&data_[idx]));
+		}
+	}
+
+	void unsafe_reset()
+	{
+		auto reset_single = [](T& component) { component.~T(); };
+		for_each(reset_single);
+		free_.set();
+	}
+
+	void reset()
+	{
+		std::lock_guard guard(mutex_);
+		unsafe_reset();
+	}
+
+	preallocated_container() 
+	{ 
+		free_.set(); 
+	}
+
+	~preallocated_container()
+	{
+		unsafe_reset();
+	}
 };

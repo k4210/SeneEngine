@@ -29,7 +29,7 @@ class LockFreeQueue_SingleConsumer
 #endif
 	};
 	std::atomic<State> state_;
-	std::atomic<Block*> free_list_head_;
+	std::atomic<Block*> free_list_head_ = nullptr;;
 
 	void MoveToFreeList(Block* block)
 	{

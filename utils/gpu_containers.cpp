@@ -103,7 +103,7 @@ void UploadBuffer::initialize(ID3D12Device* device, uint32_t size)
 }
 
 std::optional< uint64_t> UploadBuffer::data_to_upload(
-	const UINT8* data, uint32_t size, uint32_t alignment)
+	const void* data, uint32_t size, uint32_t alignment)
 {
 	static_assert(sizeof(uint64_t) == sizeof(UINT8*), "only x64 is supported");
 	UINT8* const  local_begin = reinterpret_cast<UINT8*>(align(reinterpret_cast<uint64_t>(current_pos_), alignment));

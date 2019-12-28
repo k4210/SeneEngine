@@ -1,15 +1,8 @@
+#pragma once
+
 #include "utils/base_system.h"
 #include "utils/gpu_containers.h"
-#include <DirectXMath.h>
-
-struct RendererComponent // <= static mesh
-{
-	EntityId entity_id;
-	//bounding box
-	//ptr to asset vertex buffer
-	//material data
-	//flags
-};
+#include "utils/math.h"
 
 namespace Const
 {
@@ -28,15 +21,11 @@ namespace IRenderer
 	using Microsoft::WRL::ComPtr;
 
 	struct RT_MSG_UpdateCamera { DirectX::XMFLOAT3 position; DirectX::XMFLOAT3 direction; };
-	struct RT_MSG_MeshBuffer { CD3DX12_GPU_DESCRIPTOR_HANDLE meshes_buff; uint32_t num_elements = 0; };
-	struct RT_MSG_StaticInstances { CD3DX12_GPU_DESCRIPTOR_HANDLE static_instances; uint32_t num_elements = 0; };
-	struct RT_MSG_StaticNodes { CD3DX12_GPU_DESCRIPTOR_HANDLE static_nodes; uint32_t num_elements = 0; };
 	struct RT_MSG_ToogleFullScreen { std::optional<bool> forced_mode; };
-	//Animated stuff..
-	//Post processes..
-	//loading screen..
-	//full screen..
-	//video player..
+	
+	struct RT_MSG_MeshBuffer { CD3DX12_GPU_DESCRIPTOR_HANDLE meshes_buff; uint32_t num_elements = 0; }; // update fragment
+	struct RT_MSG_StaticInstances { CD3DX12_GPU_DESCRIPTOR_HANDLE static_instances; uint32_t num_elements = 0; }; // update fragment
+	struct RT_MSG_StaticNodes { CD3DX12_GPU_DESCRIPTOR_HANDLE static_nodes; uint32_t num_elements = 0; };
 
 	using RT_MSG = std::variant<
 		RT_MSG_UpdateCamera,
@@ -82,19 +71,5 @@ namespace IRenderer
 	const RendererCommon* GetRendererCommon();
 	void EnqueueMsg(RT_MSG&&);
 	IBaseSystem* CreateSystem(HWND hWnd, uint32_t width, uint32_t height);
-	RendererComponent* AllocateComponent(EntityId);
-	void FreeComponent(RendererComponent*);
 };
 
-struct ComponentHandle
-{
-private:
-	RendererComponent* component = nullptr;
-
-public:
-	bool IsValid() const { return component; }
-	EntityId GetEntityId() const;
-	//void Initialize();
-	//void Cleanup();
-	//void UpdateTransform(Transform);
-};

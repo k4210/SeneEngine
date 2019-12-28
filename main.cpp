@@ -22,12 +22,6 @@ protected:
 
 int main()
 {
-	SampleEntity entity;
-	SmallContainer<float, 1> q1;
-	SmallContainer<float, 2> q2;
-	SmallContainer<float, 3> q3;
-	SmallContainer<float, 4> q4;
-	EntitiUtils::AllComponentsValid(entity);
 	SceneEngine se;
 	return run_application(se, 1280, 720);
 }
@@ -35,6 +29,8 @@ int main()
 void SceneEngine::OnInit(HWND hWnd, UINT width, UINT height)
 {
 	systems_.emplace_back(IRenderer::CreateSystem(hWnd, width, height));
+	systems_.emplace_back(IRenderDataManager::CreateSystem());
+	systems_.emplace_back(IGameplay::CreateSystem());
 
 	for (auto& system : systems_)
 	{
@@ -55,7 +51,7 @@ void SceneEngine::OnDestroy()
 	}
 	for (auto& system : systems_)
 	{
-		system->destroy();
+		system->Destroy();
 	}
 	systems_.clear();
 }

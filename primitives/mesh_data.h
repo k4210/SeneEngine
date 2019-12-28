@@ -15,6 +15,9 @@ struct MeshData
 {
 	std::vector<Vertex> vertexes;
 	std::vector<uint32_t> indices;
+	float radius = 0;
+
+	// meterial info
 };
 
 struct Mesh : std::enable_shared_from_this<Mesh>
@@ -37,7 +40,14 @@ struct MeshDataGPU
 {
 	D3D12_INDEX_BUFFER_VIEW index_buffer;
 	D3D12_VERTEX_BUFFER_VIEW vertex_buffer;
-	float radius;
+	float radius = 0;
 	uint16_t texture_idx[2];
-	float material_value[2];
+	//float material_value[2];
+};
+
+struct MeshInstanceGPU
+{
+	Transform transform;
+	float radius = 0.0f;
+	uint32_t mesh_index = Const::kInvalid;
 };

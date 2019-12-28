@@ -15,7 +15,7 @@ namespace IRenderDataManager
 	{
 		MeshComponent* component_ = nullptr;
 	public:
-		void Initialize(std::shared_ptr<Mesh> mesh, Transform transform);
+		void Initialize(std::shared_ptr<Mesh>&& mesh, Transform&& transform);
 		void UpdateTransform(Transform transform);
 		void Cleanup();
 

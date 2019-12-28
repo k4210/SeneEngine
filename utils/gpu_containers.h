@@ -89,6 +89,8 @@ public:
 		std::swap(idx_, other.idx_);
 	}
 	~DescriptorHeapElement() { release(); }
+
+	operator bool() const { return descriptor_heap_ && (idx_ != Const::kInvalid); }
 };
 
 class UploadBuffer
@@ -148,6 +150,8 @@ public:
 	}
 
 	uint32_t elements_num() const { return elements_num_; }
+
+	bool is_ready() const { return resource_ && elements_num_ && element_size_; }
 };
 
 struct StructBuffer : protected CommitedBuffer
@@ -168,6 +172,8 @@ public:
 	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
 	uint32_t size() const { return CommitedBuffer::size(); }
 	void create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap);
+
+	bool is_ready() const { return CommitedBuffer::is_ready() && srv_; }
 };
 
 struct VertexBuffer : protected CommitedBuffer
@@ -191,6 +197,8 @@ struct VertexBuffer : protected CommitedBuffer
 	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
 	uint32_t size() const { return CommitedBuffer::size(); }
 	void create_views(ID3D12Device*, DescriptorHeap&) {}
+
+	bool is_ready() const { return CommitedBuffer::is_ready(); }
 };
 
 struct IndexBuffer32 : protected CommitedBuffer
@@ -215,6 +223,8 @@ struct IndexBuffer32 : protected CommitedBuffer
 	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
 	uint32_t size() const { return CommitedBuffer::size(); }
 	void create_views(ID3D12Device*, DescriptorHeap&) {}
+
+	bool is_ready() const { return CommitedBuffer::is_ready(); }
 };
 
 struct UavCountedBuffer : protected StructBuffer
@@ -271,7 +281,7 @@ template<typename Element, typename Buffer> static bool Construct(
 		const auto offset = upload_buffer.data_to_upload(elements, out_buffer.size(), alignof(Element));
 		if (!offset.has_value())
 		{
-			assert(false);
+			out_buffer.destroy();
 			return false;
 		}
 		out_buffer.create_resource(device);

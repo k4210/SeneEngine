@@ -158,8 +158,8 @@ protected:
 
 	void MoveToNextFrame()
 	{
-		const UINT64 currentFenceValue = common_.fence_values[common_.frame_index];
-		ThrowIfFailed(common_.direct_command_queue->Signal(common_.fence.Get(), currentFenceValue));
+		const uint64_t current_fence_value = common_.fence_values[common_.frame_index];
+		ThrowIfFailed(common_.direct_command_queue->Signal(common_.fence.Get(), current_fence_value));
 
 		common_.frame_index = common_.swap_chain->GetCurrentBackBufferIndex();
 		uint64_t& next_fence_value = common_.fence_values[common_.frame_index];
@@ -169,7 +169,7 @@ protected:
 			WaitForSingleObjectEx(common_.fence_event, INFINITE, FALSE);
 		}
 
-		next_fence_value = currentFenceValue + 1;
+		next_fence_value = current_fence_value + 1;
 	}
 
 	void ThreadInitialize() override 
@@ -373,8 +373,14 @@ public:
 
 protected:
 	void operator()(RT_MSG_UpdateCamera) {}
-	void operator()(RT_MSG_MeshBuffer) {}
-	void operator()(RT_MSG_StaticInstances) {}
+	void operator()(RT_MSG_MeshBuffer) 
+	{
+	
+	}
+	void operator()(RT_MSG_StaticInstances) 
+	{
+	
+	}
 	void operator()(RT_MSG_StaticNodes) {}
 	void operator()(RT_MSG_ToogleFullScreen msg)
 	{

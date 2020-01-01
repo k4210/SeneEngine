@@ -37,6 +37,7 @@
 #include <deque>
 #include <vector>
 #include <thread>
+#include <future>
 #include <variant>
 #include <atomic>
 #include <memory>

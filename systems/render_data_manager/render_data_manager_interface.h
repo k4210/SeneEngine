@@ -26,5 +26,8 @@ namespace IRenderDataManager
 		MeshHandle(const MeshHandle&) = delete;
 		MeshHandle& operator=(const MeshHandle&) = delete;
 		~MeshHandle() { Cleanup(); }
+
+		static uint32_t ActualBatch();
+		static bool IsMeshLoaded(Mesh& mesh);
 	};
 }

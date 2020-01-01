@@ -364,9 +364,14 @@ protected:
 
 	VertexBuffer vertex_buffer_;
 	IndexBuffer32 index_buffer_;
-	UavCountedBuffer indirect_draw_commands_;
+
 	DescriptorHeap buffers_heap_;
 	UploadBuffer upload_buffer_;
+
+	UavCountedBuffer filtered_nodes_; //full nodes
+	UavCountedBuffer filtered_instances_; // instance_idx
+	UavCountedBuffer temp_indexes_; //filtered_node' and instance_idx'
+	UavCountedBuffer indirect_draw_commands_;
 
 public:
 	Renderer(HWND hWnd, uint32_t width, uint32_t height) : BaseRenderer(hWnd, width, height) {}
@@ -377,11 +382,10 @@ protected:
 	{
 	
 	}
-	void operator()(RT_MSG_StaticInstances) 
+	void operator()(RT_MSG_StaticBuffers)
 	{
 	
 	}
-	void operator()(RT_MSG_StaticNodes) {}
 	void operator()(RT_MSG_ToogleFullScreen msg)
 	{
 		const bool new_fullscreen = msg.forced_mode ? *msg.forced_mode : !common_.fullscreen;
@@ -576,6 +580,6 @@ protected:
 	}
 };
 
-const RendererCommon* GetRendererCommon() { return renderer_inst ? &renderer_inst->GetCommon() : nullptr; }
+const RendererCommon& GetRendererCommon() { assert(renderer_inst); return renderer_inst->GetCommon(); }
 void IRenderer::EnqueueMsg(RT_MSG&& msg) { assert(renderer_inst); renderer_inst->EnqueueMsg(std::forward<RT_MSG>(msg)); }
 IBaseSystem* IRenderer::CreateSystem(HWND hWnd, uint32_t width, uint32_t height) { return new Renderer(hWnd, width, height); }

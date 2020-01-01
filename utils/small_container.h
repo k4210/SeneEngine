@@ -2,6 +2,17 @@
 #include <algorithm>
 #include "third_party/bitset2/bitset2.hpp" 
 
+template<typename T> void RemoveSwap(std::vector<T>& vec, std::size_t idx)
+{
+	assert(vec.size() > idx);
+	const std::size_t last_valid_idx = vec.size() - 1;
+	if (idx != last_valid_idx)
+	{
+		vec[idx] = std::move(vec[last_valid_idx]);
+	}
+	vec.pop_back();
+}
+
 template<typename T, uint32_t kMinInlineCapacity = 1>
 class small_container
 {
@@ -26,7 +37,7 @@ private:
 			T*			get_ptr(std::size_t pos)			{ return reinterpret_cast<		T*>(get_mem() + pos); }
 	std::size_t			max_size()					const	{ return allocation_size_ ? allocation_size_ : kInlineCapacity; }
 
-	void resize_allocation(uint32_t new_capacity)
+	void resize_allocation(std::size_t new_capacity)
 	{
 		assert(new_capacity >= num_);
 		const bool inline_alloc = new_capacity <= kInlineCapacity;
@@ -49,7 +60,7 @@ private:
 		{
 			data_.allocation_ = new_allocation;
 		}
-		allocation_size_ = inline_alloc ? 0 : new_capacity;
+		allocation_size_ = inline_alloc ? 0 : static_cast<uint32_t>(new_capacity);
 	}
 
 	RawData* next_place()
@@ -75,7 +86,7 @@ public:
 
 	template<typename ...Args> 
 	void emplace_back	(Args&&... args)	{ new(next_place()) T(std::forward<Args>(args)...); }
-	void add			(T&& element)		{ new(next_place()) T(std::move<T>(element)); }
+	void add			(T&& element)		{ new(next_place()) T(std::forward<T>(element)); }
 
 	void shrink(uint32_t slack = 0)
 	{
@@ -101,6 +112,11 @@ public:
 		{
 			resize_allocation(new_capacity);
 		}
+	}
+
+	std::size_t iterator_to_index(T* item) const
+	{
+		return std::distance(get_mem(), reinterpret_cast<const RawData*>(item));
 	}
 
 	void remove(std::size_t idx, bool swap)
@@ -144,7 +160,12 @@ private:
 	std::mutex mutex_;
 
 public:
-	template<typename ...Args> T* unsafe_allocate(Args&&... args)
+	std::size_t get_num() const 
+	{
+		return free_.
+	}
+
+	template<typename ...Args> T* allocate(Args&&... args)
 	{
 		const auto idx = free_.find_first();
 		if (idx == Bitset2::bitset2<N>::npos)
@@ -153,7 +174,7 @@ public:
 		return new (&data_[idx]) T(std::forward<Args>(args)...);
 	}
 
-	void unsafe_free(T* item)
+	void free(T* item)
 	{
 		assert(item);
 		const auto idx = std::distance(data_, reinterpret_cast<RawData*>(item));
@@ -163,23 +184,35 @@ public:
 		item->~T();
 	}
 
-	bool is_set(const T* item) const
+	uint32_t safe_get_index(const T* item) const
 	{
 		assert(item);
 		const auto idx = std::distance(data_, reinterpret_cast<RawData*>(item));
+		assert((idx < N) && (idx >= 0));
+		return idx;
+	}
+
+	bool is_set(const T* item) const
+	{
+		const auto idx = safe_get_index(item);
 		return (idx < N) && (idx >= 0) && !free_.test(idx);
 	}
 
-	template<typename ...Args> T* allocate(Args&&... args)
-	{ 
-		std::lock_guard guard(mutex_); 
-		return unsafe_allocate(std::forward<Args>(args)...);
+	bool is_set(const uint32_t idx) const
+	{
+		return (idx < N) && (idx >= 0) && !free_.test(idx);
 	}
 
-	void free(T* component) 
+	template<typename ...Args> T* safe_allocate(Args&&... args)
 	{ 
 		std::lock_guard guard(mutex_); 
-		unsafe_free(component);
+		return allocate(std::forward<Args>(args)...);
+	}
+
+	void safe_free(T* component) 
+	{ 
+		std::lock_guard guard(mutex_); 
+		free(component);
 	}
 
 	template<typename F> void for_each(F& func)
@@ -191,17 +224,17 @@ public:
 		}
 	}
 
-	void unsafe_reset()
+	void reset()
 	{
 		auto reset_single = [](T& component) { component.~T(); };
 		for_each(reset_single);
 		free_.set();
 	}
 
-	void reset()
+	void safe_reset()
 	{
 		std::lock_guard guard(mutex_);
-		unsafe_reset();
+		reset();
 	}
 
 	preallocated_container() 
@@ -213,4 +246,11 @@ public:
 	{
 		unsafe_reset();
 	}
+
+	T* safe_get_data() { return &data_[0]; }
+	const T* safe_get_data() const { return &data_[0]; }
+
+	const	T& operator[](std::size_t pos)	const	{	assert(N > pos); assert(!free_.test(pos)); return *get_ptr(pos); }
+			T& operator[](std::size_t pos)			{	assert(N > pos); return *get_ptr(pos); }
+
 };

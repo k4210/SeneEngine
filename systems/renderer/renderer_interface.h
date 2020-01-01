@@ -10,28 +10,33 @@ namespace Const
 	constexpr uint32_t kLodNum = 3;
 	constexpr uint32_t kMeshCapacity = 4096;
 	constexpr uint32_t kStaticNodesCapacity = 4096;
-	constexpr uint32_t kStaticInstancesCapacity = 12 * 4096;
+	constexpr uint32_t kMaxInstancesPerNode = 16;
+	constexpr uint32_t kStaticInstancesCapacity = kStaticNodesCapacity * kMaxInstancesPerNode;
 	constexpr uint32_t kMoveableInstancesCapacity = 4 * 4096;
-	constexpr uint32_t kMaxInstancesPerNode = 32;
 	constexpr uint32_t kBuffHeapSize = 4 * kMeshCapacity;
 };
 
 namespace IRenderer
 {
 	using Microsoft::WRL::ComPtr;
+	using SyncGPU = std::pair<ComPtr<ID3D12Fence>, uint64_t>;
 
 	struct RT_MSG_UpdateCamera { DirectX::XMFLOAT3 position; DirectX::XMFLOAT3 direction; };
 	struct RT_MSG_ToogleFullScreen { std::optional<bool> forced_mode; };
 	
-	struct RT_MSG_MeshBuffer { CD3DX12_GPU_DESCRIPTOR_HANDLE meshes_buff; uint32_t num_elements = 0; }; // update fragment
-	struct RT_MSG_StaticInstances { CD3DX12_GPU_DESCRIPTOR_HANDLE static_instances; uint32_t num_elements = 0; }; // update fragment
-	struct RT_MSG_StaticNodes { CD3DX12_GPU_DESCRIPTOR_HANDLE static_nodes; uint32_t num_elements = 0; };
+	struct RT_MSG_MeshBuffer { D3D12_GPU_DESCRIPTOR_HANDLE meshes_buff; uint32_t num_elements = 0; }; // update fragment
+	struct RT_MSG_StaticBuffers 
+	{ 
+		D3D12_GPU_DESCRIPTOR_HANDLE static_nodes;
+		D3D12_GPU_DESCRIPTOR_HANDLE static_instances;
+		uint32_t num_nodes = 0; 
+		std::promise<SyncGPU> promise_previous_nodes_not_used;
+	};
 
 	using RT_MSG = std::variant<
 		RT_MSG_UpdateCamera,
 		RT_MSG_MeshBuffer,
-		RT_MSG_StaticInstances,
-		RT_MSG_StaticNodes,
+		RT_MSG_StaticBuffers,
 		RT_MSG_ToogleFullScreen>;
 
 	struct RendererCommon
@@ -68,7 +73,7 @@ namespace IRenderer
 		uint32_t dsv_descriptor_size = 0;
 	};
 
-	const RendererCommon* GetRendererCommon();
+	const RendererCommon& GetRendererCommon();
 	void EnqueueMsg(RT_MSG&&);
 	IBaseSystem* CreateSystem(HWND hWnd, uint32_t width, uint32_t height);
 };

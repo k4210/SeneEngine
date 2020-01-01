@@ -59,7 +59,7 @@ void StructBuffer::create_views(ID3D12Device* device, DescriptorHeap& descriptor
 	desc.Buffer.StructureByteStride = element_size_;
 	desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 	desc.Buffer.FirstElement = 0;
-	device->CreateShaderResourceView(resource_.Get(), &desc, srv_.get_handle());
+	device->CreateShaderResourceView(resource_.Get(), &desc, srv_.get_cpu_handle());
 }
 
 void UavCountedBuffer::create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap)
@@ -75,7 +75,7 @@ void UavCountedBuffer::create_views(ID3D12Device* device, DescriptorHeap& descri
 	uavDesc.Buffer.StructureByteStride = element_size_;
 	uavDesc.Buffer.CounterOffsetInBytes = counter_offset_;
 	uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-	device->CreateUnorderedAccessView(resource_.Get(), resource_.Get(), &uavDesc, uav_.get_handle());
+	device->CreateUnorderedAccessView(resource_.Get(), resource_.Get(), &uavDesc, uav_.get_cpu_handle());
 }
 
 uint64_t UploadBuffer::align(uint64_t uLocation, uint64_t uAlign)
@@ -102,18 +102,26 @@ void UploadBuffer::initialize(ID3D12Device* device, uint32_t size)
 	data_end_ = data_begin_ + size;
 }
 
-std::optional< uint64_t> UploadBuffer::data_to_upload(
-	const void* data, uint32_t size, uint32_t alignment)
+std::optional<std::tuple<uint64_t, UINT8*>> UploadBuffer::reserve_space(std::size_t size, std::size_t alignment)
 {
 	static_assert(sizeof(uint64_t) == sizeof(UINT8*), "only x64 is supported");
-	UINT8* const  local_begin = reinterpret_cast<UINT8*>(align(reinterpret_cast<uint64_t>(current_pos_), alignment));
+	UINT8* const local_begin = reinterpret_cast<UINT8*>(align(reinterpret_cast<uint64_t>(current_pos_), alignment));
 	assert(std::distance(data_begin_, data_end_) > size);
 	if ((local_begin + size) > data_end_)
 		return {};
-
-	memcpy(local_begin, data, size);
 	current_pos_ = local_begin + size;
-	return { local_begin - data_begin_ };
+	return {{ local_begin - data_begin_ }, local_begin };
+}
+
+std::optional< uint64_t> UploadBuffer::data_to_upload(
+	const void* src_data, std::size_t size, std::size_t alignment)
+{
+	auto reserved_mem = reserve_space(size, alignment);
+	if (!reserved_mem)
+		return {};
+	auto [offset, dst_ptr] = *reserved_mem;
+	memcpy(dst_ptr, src_data, size);
+	return { offset };
 }
 
 void UploadBuffer::reset()

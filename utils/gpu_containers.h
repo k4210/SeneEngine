@@ -29,11 +29,18 @@ public:
 		descriptor_size_ = 0;
 	}
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE get_handle(uint32_t idx) const
+	CD3DX12_CPU_DESCRIPTOR_HANDLE get_cpu_handle(uint32_t idx) const
 	{
 		assert(heap_);
 		assert(idx < taken_slots_.size());
 		return CD3DX12_CPU_DESCRIPTOR_HANDLE(heap_->GetCPUDescriptorHandleForHeapStart(), idx, descriptor_size_);
+	}
+
+	CD3DX12_GPU_DESCRIPTOR_HANDLE get_gpu_handle(uint32_t idx) const
+	{
+		assert(heap_);
+		assert(idx < taken_slots_.size());
+		return CD3DX12_GPU_DESCRIPTOR_HANDLE(heap_->GetGPUDescriptorHandleForHeapStart(), idx, descriptor_size_);
 	}
 
 	ID3D12DescriptorHeap* get_heap() const { return heap_.Get(); }
@@ -49,10 +56,16 @@ private:
 	uint32_t idx_ = Const::kInvalid;
 
 public:
-	CD3DX12_CPU_DESCRIPTOR_HANDLE get_handle() const
+	CD3DX12_CPU_DESCRIPTOR_HANDLE get_cpu_handle() const
 	{
 		assert(descriptor_heap_ && (idx_ != Const::kInvalid));
-		return descriptor_heap_->get_handle(idx_);
+		return descriptor_heap_->get_cpu_handle(idx_);
+	}
+
+	CD3DX12_GPU_DESCRIPTOR_HANDLE get_gpu_handle() const
+	{
+		assert(descriptor_heap_ && (idx_ != Const::kInvalid));
+		return descriptor_heap_->get_gpu_handle(idx_);
 	}
 
 	void release()
@@ -103,7 +116,8 @@ class UploadBuffer
 public:
 	static uint64_t align(uint64_t uLocation, uint64_t uAlign);
 	void initialize(ID3D12Device* device, uint32_t size);
-	std::optional< uint64_t > data_to_upload(const void* data, uint32_t size, uint32_t alignment);
+	std::optional< uint64_t > data_to_upload(const void* src_data, std::size_t size_bytes, std::size_t alignment);
+	std::optional<std::tuple<uint64_t, UINT8*>> reserve_space(std::size_t size_bytes, std::size_t alignment);
 	void reset();
 	void destroy();
 	ID3D12Resource* get_resource() { return upload_buffer_.Get(); }
@@ -117,11 +131,6 @@ protected:
 	uint32_t elements_num_ = 0;
 	uint32_t element_size_ = 0;
 	D3D12_RESOURCE_STATES state_ = D3D12_RESOURCE_STATE_COPY_DEST;
-
-	uint32_t size() const { assert(element_size_ && elements_num_); return element_size_ * elements_num_; }
-
-public:
-	ID3D12Resource* get_resource() const { return resource_.Get(); }
 
 	void destroy()
 	{
@@ -141,6 +150,8 @@ public:
 
 	void create_resource(ID3D12Device* device);
 
+	void create_views(ID3D12Device*, DescriptorHeap&) {}
+
 	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state)
 	{
 		assert(new_state != state_);
@@ -149,9 +160,11 @@ public:
 		return barrier;
 	}
 
-	uint32_t elements_num() const { return elements_num_; }
-
-	bool is_ready() const { return resource_ && elements_num_ && element_size_; }
+	uint32_t				elements_num()	const { return elements_num_; }
+	D3D12_RESOURCE_STATES	get_state()		const { return state_; }
+	bool					is_ready()		const { return resource_ && elements_num_ && element_size_; }
+	uint32_t				size()			const { assert(element_size_ && elements_num_); return element_size_ * elements_num_; }
+	ID3D12Resource*			get_resource()	const { return resource_.Get(); }
 };
 
 struct StructBuffer : protected CommitedBuffer
@@ -162,25 +175,38 @@ protected:
 public:
 	static constexpr D3D12_RESOURCE_STATES kDefaultState = D3D12_RESOURCE_STATE_GENERIC_READ;
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE get_srv_handle() const { return srv_.get_handle(); }
-	uint32_t elements_num() const { return elements_num_; }
+	using CommitedBuffer::initialize;
+	using CommitedBuffer::create_resource;
+	using CommitedBuffer::transition_barrier;
+	using CommitedBuffer::elements_num;
+	using CommitedBuffer::get_resource;
+	using CommitedBuffer::size;
+	using CommitedBuffer::get_state;
 
-	void destroy() { srv_.release(); CommitedBuffer::destroy(); }
-	ID3D12Resource* get_resource() const { return CommitedBuffer::get_resource(); }
-	void initialize(uint32_t capacity, uint32_t element_size) { CommitedBuffer::initialize(capacity, element_size); }
-	void create_resource(ID3D12Device* device) { CommitedBuffer::create_resource(device); }
-	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
-	uint32_t size() const { return CommitedBuffer::size(); }
+	void							destroy()						{ srv_.release(); CommitedBuffer::destroy(); }
+	bool							is_ready()				const	{ return CommitedBuffer::is_ready() && srv_; }
+	D3D12_CPU_DESCRIPTOR_HANDLE		get_srv_handle_cpu()	const	{ return srv_.get_cpu_handle(); }
+	D3D12_GPU_DESCRIPTOR_HANDLE		get_srv_handle_gpu()	const	{ return srv_.get_gpu_handle(); }
+
 	void create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap);
-
-	bool is_ready() const { return CommitedBuffer::is_ready() && srv_; }
 };
 
 struct VertexBuffer : protected CommitedBuffer
 {
 	static constexpr D3D12_RESOURCE_STATES kDefaultState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
 
-	D3D12_VERTEX_BUFFER_VIEW get_vertex_view() const 
+	using CommitedBuffer::initialize;
+	using CommitedBuffer::create_resource;
+	using CommitedBuffer::transition_barrier;
+	using CommitedBuffer::elements_num;
+	using CommitedBuffer::get_resource;
+	using CommitedBuffer::size;
+	using CommitedBuffer::get_state;
+	using CommitedBuffer::destroy;
+	using CommitedBuffer::is_ready;
+	using CommitedBuffer::create_views;
+
+	D3D12_VERTEX_BUFFER_VIEW get_vertex_view() const
 	{
 		assert(resource_);
 		D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view;
@@ -189,23 +215,29 @@ struct VertexBuffer : protected CommitedBuffer
 		vertex_buffer_view.SizeInBytes = size();
 		return vertex_buffer_view;
 	}
-	uint32_t elements_num() const { return elements_num_; }
-	void destroy() { CommitedBuffer::destroy(); }
-	ID3D12Resource* get_resource() const { return CommitedBuffer::get_resource(); }
-	void initialize(uint32_t capacity, uint32_t element_size) { CommitedBuffer::initialize(capacity, element_size); }
-	void create_resource(ID3D12Device* device) { CommitedBuffer::create_resource(device); }
-	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
-	uint32_t size() const { return CommitedBuffer::size(); }
-	void create_views(ID3D12Device*, DescriptorHeap&) {}
-
-	bool is_ready() const { return CommitedBuffer::is_ready(); }
 };
 
 struct IndexBuffer32 : protected CommitedBuffer
 {
 	static constexpr D3D12_RESOURCE_STATES kDefaultState = D3D12_RESOURCE_STATE_INDEX_BUFFER;
 
-	D3D12_INDEX_BUFFER_VIEW get_index_view() const 
+	using CommitedBuffer::create_resource;
+	using CommitedBuffer::transition_barrier;
+	using CommitedBuffer::elements_num;
+	using CommitedBuffer::get_resource;
+	using CommitedBuffer::size;
+	using CommitedBuffer::get_state;
+	using CommitedBuffer::destroy;
+	using CommitedBuffer::is_ready;
+	using CommitedBuffer::create_views;
+
+	void initialize(uint32_t capacity, uint32_t element_size = sizeof(uint32_t)) 
+	{ 
+		assert(element_size == sizeof(uint32_t)); 
+		CommitedBuffer::initialize(capacity, element_size); 
+	}
+
+	D3D12_INDEX_BUFFER_VIEW get_index_view()	const
 	{
 		assert(resource_);
 		D3D12_INDEX_BUFFER_VIEW index_buffer_view;
@@ -214,17 +246,6 @@ struct IndexBuffer32 : protected CommitedBuffer
 		index_buffer_view.SizeInBytes = size();
 		return index_buffer_view;
 	}
-	uint32_t elements_num() const { return elements_num_; }
-
-	void destroy() { CommitedBuffer::destroy(); }
-	ID3D12Resource* get_resource() const { return CommitedBuffer::get_resource(); }
-	void initialize(uint32_t capacity, uint32_t element_size = sizeof(uint32_t)) { assert(element_size == sizeof(uint32_t)); CommitedBuffer::initialize(capacity, element_size); }
-	void create_resource(ID3D12Device* device) { CommitedBuffer::create_resource(device); }
-	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
-	uint32_t size() const { return CommitedBuffer::size(); }
-	void create_views(ID3D12Device*, DescriptorHeap&) {}
-
-	bool is_ready() const { return CommitedBuffer::is_ready(); }
 };
 
 struct UavCountedBuffer : protected StructBuffer
@@ -242,28 +263,31 @@ protected:
 public:
 	static constexpr D3D12_RESOURCE_STATES kDefaultState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
-	void initialize(uint32_t capacity, uint32_t element_size) { CommitedBuffer::initialize(capacity, element_size); }
-	void destroy()
+	using StructBuffer::initialize;
+	using StructBuffer::transition_barrier;
+	using StructBuffer::elements_num;
+	using StructBuffer::get_resource;
+	using StructBuffer::size;
+	using StructBuffer::get_state;
+	using StructBuffer::is_ready;
+
+	void							destroy()
 	{
 		counter_offset_ = Const::kInvalid64;
 		uav_.release();
 		StructBuffer::destroy();
 	}
-	ID3D12Resource* get_resource() const { return resource_.Get(); }
-	uint32_t size() const { return CommitedBuffer::size(); } //without counter
-	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state) { return CommitedBuffer::transition_barrier(new_state); }
-	void create_resource(ID3D12Device* device) 
-	{ 
+	void							create_resource(ID3D12Device* device)
+	{
 		counter_offset_ = align_for_uav_counter(size());
 		const D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(counter_offset_ + sizeof(uint32_t), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 		const CD3DX12_HEAP_PROPERTIES heap_prop(D3D12_HEAP_TYPE_DEFAULT);
 		ThrowIfFailed(device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &desc, state_, nullptr, IID_PPV_ARGS(&resource_)));
 	}
-	void create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap);
-	uint32_t elements_num() const { return elements_num_; }
+	void							create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap);
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE get_uav_handle() const { return uav_.get_handle(); }
-	uint64_t get_counter_offset() const { return counter_offset_; }
+	D3D12_CPU_DESCRIPTOR_HANDLE		get_uav_handle()		const { return uav_.get_cpu_handle(); }
+	uint64_t						get_counter_offset()	const { return counter_offset_; }
 };
 
 template<typename Element, typename Buffer> static bool Construct(
@@ -273,10 +297,12 @@ template<typename Element, typename Buffer> static bool Construct(
 	ID3D12Device* device,
 	ID3D12GraphicsCommandList* command_list,
 	UploadBuffer& upload_buffer,
-	DescriptorHeap& descriptor_heap)
+	DescriptorHeap& descriptor_heap,
+	std::optional<D3D12_RESOURCE_STATES> final_state = {})
 {
-	assert(elements && elements_num && device && command_list);
+	assert(elements_num && device && command_list);
 	out_buffer.initialize(elements_num, sizeof(Element));
+	if(elements)
 	{
 		const auto offset = upload_buffer.data_to_upload(elements, out_buffer.size(), alignof(Element));
 		if (!offset.has_value())
@@ -288,17 +314,30 @@ template<typename Element, typename Buffer> static bool Construct(
 		out_buffer.create_views(device, descriptor_heap);
 		command_list->CopyBufferRegion(out_buffer.get_resource(), 0, upload_buffer.get_resource(), offset.value(), out_buffer.size());
 	}
+	else
+	{
+		out_buffer.create_resource(device);
+		out_buffer.create_views(device, descriptor_heap);
+	}
 
 	if constexpr (std::is_same_v<Buffer, UavCountedBuffer>)
 	{
-		const uint32_t counter_value = elements_num;
+		const uint32_t counter_value = elements ? elements_num : 0;
 		const auto offset = upload_buffer.data_to_upload(&counter_value, sizeof(uint32_t), alignof(uint32_t));
-		assert(offset.has_value());
+		if (!offset.has_value())
+		{
+			out_buffer.destroy();
+			return false;
+		}
 		command_list->CopyBufferRegion(out_buffer.get_resource(), out_buffer.get_counter_offset(), upload_buffer.get_resource(), offset.value(), sizeof(uint32_t));
 	}
 
-	D3D12_RESOURCE_BARRIER barriers[] = { out_buffer.transition_barrier(Buffer::kDefaultState) };
-	command_list->ResourceBarrier(_countof(barriers), barriers);
+	const D3D12_RESOURCE_STATES new_state = final_state.value_or(Buffer::kDefaultState);
+	if (new_state != out_buffer.get_state())
+	{
+		D3D12_RESOURCE_BARRIER barriers[] = { out_buffer.transition_barrier(new_state) };
+		command_list->ResourceBarrier(_countof(barriers), barriers);
+	}
 	return true;
 }
 

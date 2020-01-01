@@ -160,6 +160,9 @@ private:
 	std::mutex mutex_;
 
 public:
+	T* safe_get_data() { return reinterpret_cast<T*>(&data_[0]); }
+	const T* safe_get_data() const { return reinterpret_cast<const T*>(&data_[0]); }
+
 	std::size_t get_num() const 
 	{
 		return free_.
@@ -177,8 +180,7 @@ public:
 	void free(T* item)
 	{
 		assert(item);
-		const auto idx = std::distance(data_, reinterpret_cast<RawData*>(item));
-		assert(idx < N && idx >= 0);
+		const auto idx = safe_get_index(item);
 		assert(!free_.test(idx));
 		free_.set(idx, true);
 		item->~T();
@@ -187,7 +189,7 @@ public:
 	uint32_t safe_get_index(const T* item) const
 	{
 		assert(item);
-		const auto idx = std::distance(data_, reinterpret_cast<RawData*>(item));
+		const auto idx = static_cast<uint32_t>(std::distance(&data_[0], reinterpret_cast<const RawData*>(item)));
 		assert((idx < N) && (idx >= 0));
 		return idx;
 	}
@@ -198,7 +200,7 @@ public:
 		return (idx < N) && (idx >= 0) && !free_.test(idx);
 	}
 
-	bool is_set(const uint32_t idx) const
+	bool is_set(const std::size_t idx) const
 	{
 		return (idx < N) && (idx >= 0) && !free_.test(idx);
 	}
@@ -220,7 +222,7 @@ public:
 		const auto occupied = ~free_;
 		for (auto idx = occupied.find_first(); idx != Bitset2::bitset2<N>::npos; idx = occupied.find_next(idx))
 		{
-			func(*reinterpret_cast<T*>(&data_[idx]));
+			func(safe_get_data()[idx]);
 		}
 	}
 
@@ -244,13 +246,19 @@ public:
 
 	~preallocated_container()
 	{
-		unsafe_reset();
+		reset();
 	}
 
-	T* safe_get_data() { return &data_[0]; }
-	const T* safe_get_data() const { return &data_[0]; }
+	const	T& operator[](std::size_t idx)	const	{	assert(N > idx); assert(!free_.test(idx)); return safe_get_data()[idx]; }
+			T& operator[](std::size_t idx)			{	assert(N > idx); assert(!free_.test(idx)); return safe_get_data()[idx]; }
 
-	const	T& operator[](std::size_t pos)	const	{	assert(N > pos); assert(!free_.test(pos)); return *get_ptr(pos); }
-			T& operator[](std::size_t pos)			{	assert(N > pos); return *get_ptr(pos); }
+	std::size_t find_first_free() const
+	{
+		return free_.find_first();
+	}
 
+	std::size_t find_next_taken(std::size_t start) const
+	{
+		return (~free_).find_next(start);
+	}
 };

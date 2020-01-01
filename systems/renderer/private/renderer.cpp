@@ -358,9 +358,15 @@ class Renderer : public BaseRenderer
 {
 protected:
 	ComPtr<ID3D12RootSignature> root_signature_;
-	ComPtr<ID3D12PipelineState> pipeline_state_;
 	ComPtr<ID3D12GraphicsCommandList> command_list_;
 	ComPtr<ID3D12CommandSignature> command_signature_;
+
+	ComPtr<ID3D12PipelineState> state_filter_frustum_nodes_;		// CS:						-> filtered_nodes_
+	ComPtr<ID3D12PipelineState> state_filter_depth_nodes_;			// CS: filtered_nodes_		-> temp_indexes_
+	ComPtr<ID3D12PipelineState> state_filter_frustum_instances_;	// CS: temp_indexes_		-> filtered_instances_
+	ComPtr<ID3D12PipelineState> state_filter_depth_instances_;		// CS: filtered_instances_	-> temp_indexes_
+	ComPtr<ID3D12PipelineState> state_generate_draw_commands_;		// CS: temp_indexes_		-> indirect_draw_commands_
+	ComPtr<ID3D12PipelineState> pipeline_state_;
 
 	VertexBuffer vertex_buffer_;
 	IndexBuffer32 index_buffer_;
@@ -373,23 +379,64 @@ protected:
 	UavCountedBuffer temp_indexes_; //filtered_node' and instance_idx'
 	UavCountedBuffer indirect_draw_commands_;
 
+	std::vector<std::shared_ptr<Mesh>> to_register_;
+
+	CD3DX12_GPU_DESCRIPTOR_HANDLE meshes_buff;
+	CD3DX12_GPU_DESCRIPTOR_HANDLE static_nodes;
+	CD3DX12_GPU_DESCRIPTOR_HANDLE static_instances;
+
 public:
 	Renderer(HWND hWnd, uint32_t width, uint32_t height) : BaseRenderer(hWnd, width, height) {}
 
 protected:
 	void operator()(RT_MSG_UpdateCamera) {}
-	void operator()(RT_MSG_MeshBuffer) 
+
+	void operator()(RT_MSG_MeshBuffer msg) 
 	{
-	
+		meshes_buff = msg.meshes_buff;
 	}
-	void operator()(RT_MSG_StaticBuffers)
+
+	void operator()(RT_MSG_StaticBuffers msg)
 	{
-	
+		static_nodes = msg.static_nodes;
+		static_instances = msg.static_instances;
+		//msg.promise_previous_nodes_not_used
 	}
+
 	void operator()(RT_MSG_ToogleFullScreen msg)
 	{
 		const bool new_fullscreen = msg.forced_mode ? *msg.forced_mode : !common_.fullscreen;
 		SetupFullscreen(new_fullscreen);
+	}
+
+	void operator()(RT_MSG_RegisterMeshes msg)
+	{
+		if (!to_register_.size())
+		{
+			to_register_ = std::move(msg.to_register);
+		}
+		else
+		{
+			to_register_.insert(to_register_.end(), msg.to_register.begin(), msg.to_register.end());
+		}
+	}
+
+	void RegisterMeshes()
+	{
+		if (!to_register_.size())
+			return;
+		std::vector<D3D12_RESOURCE_BARRIER> barriers;
+		barriers.reserve(2 * to_register_.size());
+		for (auto& mesh : to_register_)
+		{
+			assert(mesh);
+			barriers.push_back(mesh->index_buffer.transition_barrier(D3D12_RESOURCE_STATE_INDEX_BUFFER));
+			barriers.push_back(mesh->vertex_buffer.transition_barrier(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+		}
+		to_register_.clear();
+
+		assert(command_list_);
+		command_list_->ResourceBarrier(static_cast<uint32_t>(barriers.size()), &barriers[0]);
 	}
 
 	void DrawSceneColor()   
@@ -413,12 +460,13 @@ protected:
 		command_list_->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 		command_list_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+		/*
 		const D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view = vertex_buffer_.get_vertex_view();
 		command_list_->IASetVertexBuffers(0, 1, &vertex_buffer_view);
 		const D3D12_INDEX_BUFFER_VIEW index_buffer_view = index_buffer_.get_index_view();
 		command_list_->IASetIndexBuffer(&index_buffer_view);
+		*/
 
-		//command_list_->DrawIndexedInstanced(3, 1, 0, 0, 0);
 		command_list_->ExecuteIndirect(command_signature_.Get(), indirect_draw_commands_.elements_num()
 			, indirect_draw_commands_.get_resource(), 0
 			, indirect_draw_commands_.get_resource(), indirect_draw_commands_.get_counter_offset());
@@ -433,11 +481,12 @@ protected:
 		ID3D12CommandAllocator* const allocator = common_.command_allocators[common_.frame_index].Get();
 		ThrowIfFailed(allocator->Reset());
 		ThrowIfFailed(command_list_->Reset(allocator, nullptr));
+		RegisterMeshes();
 		DrawSceneColor();
 		ThrowIfFailed(command_list_->Close());
 	}
 
-	void HandleSingleMessage(RT_MSG& msg) override { std::visit([&](auto&& arg) { (*this)(arg); }, msg); }
+	void HandleSingleMessage(RT_MSG& msg) override { std::visit([&](auto&& arg) { (*this)(std::move(arg)); }, msg); }
 
 	void Tick() override
 	{
@@ -459,14 +508,14 @@ protected:
 			};
 
 			Construct(vertex_buffer_, triangle_vertices, _countof(triangle_vertices), common_.device.Get(), 
-				command_list_.Get(), upload_buffer_, buffers_heap_);
+				command_list_.Get(), upload_buffer_, &buffers_heap_);
 		}
 
 		{	//Index Buffer
 			const uint32_t indices[] = { 0, 1, 2 };
 
 			Construct(index_buffer_, indices, _countof(indices), common_.device.Get(),
-				command_list_.Get(), upload_buffer_, buffers_heap_);
+				command_list_.Get(), upload_buffer_, &buffers_heap_);
 		}
 
 		{
@@ -475,7 +524,7 @@ protected:
 				{ XMFLOAT4X4(), index_buffer_.get_index_view(), vertex_buffer_.get_vertex_view(), XMUINT2(), args}
 			};
 			Construct(indirect_draw_commands_, indirect_commands, _countof(indirect_commands), common_.device.Get(),
-				command_list_.Get(), upload_buffer_, buffers_heap_);
+				command_list_.Get(), upload_buffer_, &buffers_heap_);
 		}
 	}
 
@@ -580,6 +629,6 @@ protected:
 	}
 };
 
-const RendererCommon& GetRendererCommon() { assert(renderer_inst); return renderer_inst->GetCommon(); }
+const RendererCommon& IRenderer::GetRendererCommon() { assert(renderer_inst); return renderer_inst->GetCommon(); }
 void IRenderer::EnqueueMsg(RT_MSG&& msg) { assert(renderer_inst); renderer_inst->EnqueueMsg(std::forward<RT_MSG>(msg)); }
 IBaseSystem* IRenderer::CreateSystem(HWND hWnd, uint32_t width, uint32_t height) { return new Renderer(hWnd, width, height); }

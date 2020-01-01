@@ -140,17 +140,17 @@ protected:
 		state_ = D3D12_RESOURCE_STATE_COPY_DEST;
 	}
 
-	void initialize(uint32_t capacity, uint32_t element_size)
+	void initialize(std::size_t capacity, std::size_t element_size)
 	{
 		assert(!element_size_);
 		assert(!elements_num_);
-		element_size_ = element_size;
-		elements_num_ = capacity;
+		element_size_ = static_cast<uint32_t>(element_size);
+		elements_num_ = static_cast<uint32_t>(capacity);
 	}
 
 	void create_resource(ID3D12Device* device);
 
-	void create_views(ID3D12Device*, DescriptorHeap&) {}
+	void create_views(ID3D12Device*, DescriptorHeap*) {}
 
 	D3D12_RESOURCE_BARRIER transition_barrier(D3D12_RESOURCE_STATES new_state)
 	{
@@ -188,7 +188,7 @@ public:
 	D3D12_CPU_DESCRIPTOR_HANDLE		get_srv_handle_cpu()	const	{ return srv_.get_cpu_handle(); }
 	D3D12_GPU_DESCRIPTOR_HANDLE		get_srv_handle_gpu()	const	{ return srv_.get_gpu_handle(); }
 
-	void create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap);
+	void create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap);
 };
 
 struct VertexBuffer : protected CommitedBuffer
@@ -231,7 +231,7 @@ struct IndexBuffer32 : protected CommitedBuffer
 	using CommitedBuffer::is_ready;
 	using CommitedBuffer::create_views;
 
-	void initialize(uint32_t capacity, uint32_t element_size = sizeof(uint32_t)) 
+	void initialize(std::size_t capacity, std::size_t element_size = sizeof(uint32_t))
 	{ 
 		assert(element_size == sizeof(uint32_t)); 
 		CommitedBuffer::initialize(capacity, element_size); 
@@ -284,7 +284,7 @@ public:
 		const CD3DX12_HEAP_PROPERTIES heap_prop(D3D12_HEAP_TYPE_DEFAULT);
 		ThrowIfFailed(device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &desc, state_, nullptr, IID_PPV_ARGS(&resource_)));
 	}
-	void							create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap);
+	void							create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE		get_uav_handle()		const { return uav_.get_cpu_handle(); }
 	uint64_t						get_counter_offset()	const { return counter_offset_; }
@@ -293,11 +293,11 @@ public:
 template<typename Element, typename Buffer> static bool Construct(
 	Buffer& out_buffer,
 	const Element* elements,
-	uint32_t elements_num,
+	std::size_t elements_num,
 	ID3D12Device* device,
 	ID3D12GraphicsCommandList* command_list,
 	UploadBuffer& upload_buffer,
-	DescriptorHeap& descriptor_heap,
+	DescriptorHeap* descriptor_heap = nullptr,
 	std::optional<D3D12_RESOURCE_STATES> final_state = {})
 {
 	assert(elements_num && device && command_list);
@@ -322,7 +322,7 @@ template<typename Element, typename Buffer> static bool Construct(
 
 	if constexpr (std::is_same_v<Buffer, UavCountedBuffer>)
 	{
-		const uint32_t counter_value = elements ? elements_num : 0;
+		const uint32_t counter_value = elements ? static_cast<uint32_t>(elements_num) : 0;
 		const auto offset = upload_buffer.data_to_upload(&counter_value, sizeof(uint32_t), alignof(uint32_t));
 		if (!offset.has_value())
 		{

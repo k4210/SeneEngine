@@ -26,13 +26,34 @@ public:
 	virtual ~GameplaySystem() { assert(gameplay_inst); gameplay_inst = nullptr; }
 
 protected:
+	Entity triangle_instance_;
+	
+
 	void operator()(GP_MSG_MeshLoaded) {}
 	void operator()(GP_MSG_MaterialLoaded) {}
 
 	void HandleSingleMessage(GP_MSG& msg) override { std::visit([&](auto&& arg) { (*this)(arg); }, msg); }
 	void Tick() override {}
-	void ThreadInitialize() override {}
-	void ThreadCleanUp() override {}
+	void ThreadInitialize() override 
+	{
+		std::shared_ptr<Mesh> triangle_mesh_ = std::make_shared<Mesh>();
+		{
+			MeshData data;
+			data.indices = { 0, 1, 2 };
+			data.vertexes = {
+					{ { 0.0f, 0.25f, 0.0f    }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} },
+					{ { 0.25f, -0.25f, 0.0f  }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} },
+					{ { -0.25f, -0.25f, 0.0f }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} } };
+			triangle_mesh_->mesh_data = { std::move(data) };
+			triangle_mesh_->radius = 0.4f;
+		}
+		Transform transfrom;
+		triangle_instance_.mesh.Initialize(std::move(triangle_mesh_), std::move(transfrom));
+	}
+	void ThreadCleanUp() override 
+	{
+		EntityUtils::Cleanup(triangle_instance_);
+	}
 };
 
 void IGameplay::EnqueueMsg(GP_MSG&& msg) { assert(gameplay_inst); gameplay_inst->EnqueueMsg(std::forward<GP_MSG>(msg)); }

@@ -46,10 +46,11 @@ void CommitedBuffer::create_resource(ID3D12Device* device)
 		, D3D12_HEAP_FLAG_NONE, &desc, state_, nullptr, IID_PPV_ARGS(&resource_)));
 }
 
-void StructBuffer::create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap)
+void StructBuffer::create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap)
 {
+	assert(descriptor_heap);
 	assert(resource_);
-	const bool ok = srv_.initialize(descriptor_heap);
+	const bool ok = srv_.initialize(*descriptor_heap);
 	assert(ok);
 	D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
 	desc.Format = DXGI_FORMAT_UNKNOWN;
@@ -62,10 +63,11 @@ void StructBuffer::create_views(ID3D12Device* device, DescriptorHeap& descriptor
 	device->CreateShaderResourceView(resource_.Get(), &desc, srv_.get_cpu_handle());
 }
 
-void UavCountedBuffer::create_views(ID3D12Device* device, DescriptorHeap& descriptor_heap)
+void UavCountedBuffer::create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap)
 {
+	assert(descriptor_heap);
 	assert(resource_);
-	const bool ok = uav_.initialize(descriptor_heap);
+	const bool ok = uav_.initialize(*descriptor_heap);
 	assert(ok);
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -106,11 +108,11 @@ std::optional<std::tuple<uint64_t, UINT8*>> UploadBuffer::reserve_space(std::siz
 {
 	static_assert(sizeof(uint64_t) == sizeof(UINT8*), "only x64 is supported");
 	UINT8* const local_begin = reinterpret_cast<UINT8*>(align(reinterpret_cast<uint64_t>(current_pos_), alignment));
-	assert(std::distance(data_begin_, data_end_) > size);
+	//assert(std::distance(data_begin_, data_end_) > size);
 	if ((local_begin + size) > data_end_)
 		return {};
 	current_pos_ = local_begin + size;
-	return {{ local_begin - data_begin_ }, local_begin };
+	return { {std::distance(data_begin_, local_begin), local_begin} };
 }
 
 std::optional< uint64_t> UploadBuffer::data_to_upload(

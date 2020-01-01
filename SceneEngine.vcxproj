@@ -165,6 +165,9 @@
     <ClInclude Include="systems\data_source\data_source_interface.h" />
     <ClInclude Include="systems\gameplay\gameplay_interface.h" />
     <ClInclude Include="systems\renderer\renderer_interface.h" />
+    <ClInclude Include="systems\render_data_manager\private\mesh_manager.h" />
+    <ClInclude Include="systems\render_data_manager\private\rdm_base.h" />
+    <ClInclude Include="systems\render_data_manager\private\scene_manager.h" />
     <ClInclude Include="systems\render_data_manager\render_data_manager_interface.h" />
     <ClInclude Include="systems\scene_manager\scene_manager_interface.h" />
     <ClInclude Include="utils\base_app.h" />

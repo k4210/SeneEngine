@@ -3,6 +3,7 @@
 #include "utils/base_system.h"
 #include "utils/gpu_containers.h"
 #include "utils/math.h"
+#include "primitives/mesh_data.h"
 
 namespace Const
 {
@@ -24,7 +25,7 @@ namespace IRenderer
 	struct RT_MSG_UpdateCamera { DirectX::XMFLOAT3 position; DirectX::XMFLOAT3 direction; };
 	struct RT_MSG_ToogleFullScreen { std::optional<bool> forced_mode; };
 	
-	struct RT_MSG_MeshBuffer { D3D12_GPU_DESCRIPTOR_HANDLE meshes_buff; uint32_t num_elements = 0; }; // update fragment
+	struct RT_MSG_MeshBuffer { D3D12_GPU_DESCRIPTOR_HANDLE meshes_buff; }; // update fragment
 	struct RT_MSG_StaticBuffers 
 	{ 
 		D3D12_GPU_DESCRIPTOR_HANDLE static_nodes;
@@ -33,11 +34,14 @@ namespace IRenderer
 		std::promise<SyncGPU> promise_previous_nodes_not_used;
 	};
 
+	struct RT_MSG_RegisterMeshes { std::vector<std::shared_ptr<Mesh>> to_register; };
+
 	using RT_MSG = std::variant<
 		RT_MSG_UpdateCamera,
 		RT_MSG_MeshBuffer,
 		RT_MSG_StaticBuffers,
-		RT_MSG_ToogleFullScreen>;
+		RT_MSG_ToogleFullScreen,
+		RT_MSG_RegisterMeshes>;
 
 	struct RendererCommon
 	{

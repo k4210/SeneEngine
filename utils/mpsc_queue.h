@@ -146,7 +146,7 @@ public:
 				};
 			} while (!state_.compare_exchange_weak(prev_state, next_state));
 		}
-		local_head->data[local_first] = item;
+		local_head->data[local_first] = std::forward<T>(item);
 #ifdef NDEBUG
 		local_head->written[local_first] = true;
 #else

@@ -134,6 +134,10 @@ class SceneManager
 			nodes_.free(&node_gpu);
 			num_nodes_--;
 		}
+		else
+		{
+			//recalculate size
+		}
 	}
 
 public:

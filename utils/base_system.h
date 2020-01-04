@@ -49,6 +49,7 @@ protected:
 				break;
 		}
 	}
+
 	void SystemLoop()
 	{
 		ThreadInitialize();

@@ -354,6 +354,13 @@ struct IndirectCommand
 	D3D12_DRAW_INDEXED_ARGUMENTS draw_arg;
 };
 
+class ComputeIndirectPass
+{
+	ComPtr<ID3D12PipelineState> state_;
+
+
+};
+
 class Renderer : public BaseRenderer
 {
 protected:
@@ -367,9 +374,6 @@ protected:
 	ComPtr<ID3D12PipelineState> state_filter_depth_instances_;		// CS: filtered_instances_	-> temp_indexes_
 	ComPtr<ID3D12PipelineState> state_generate_draw_commands_;		// CS: temp_indexes_		-> indirect_draw_commands_
 	ComPtr<ID3D12PipelineState> pipeline_state_;
-
-	VertexBuffer vertex_buffer_;
-	IndexBuffer32 index_buffer_;
 
 	DescriptorHeap buffers_heap_;
 	UploadBuffer upload_buffer_;
@@ -400,7 +404,11 @@ protected:
 	{
 		static_nodes = msg.static_nodes;
 		static_instances = msg.static_instances;
-		//msg.promise_previous_nodes_not_used
+
+		const uint64_t current_frame_num = common_.fence_values[common_.frame_index];
+		assert(current_frame_num);
+		const uint64_t necessary_fence_value = current_frame_num - 1;
+		msg.promise_previous_nodes_not_used.set_value({ common_.fence, necessary_fence_value });
 	}
 
 	void operator()(RT_MSG_ToogleFullScreen msg)
@@ -439,7 +447,14 @@ protected:
 		command_list_->ResourceBarrier(static_cast<uint32_t>(barriers.size()), &barriers[0]);
 	}
 
-	void DrawSceneColor()   
+	void FillCommandsBuffer()
+	{
+		auto is_descriptor_valid = [](D3D12_GPU_DESCRIPTOR_HANDLE desc) -> bool { return desc.ptr != 0; };
+		const bool valid_buffs = is_descriptor_valid(meshes_buff) && is_descriptor_valid(static_nodes) 
+			&& is_descriptor_valid(static_instances);
+	}
+
+	void DrawPass()   
 	{
 		command_list_->SetPipelineState(pipeline_state_.Get());
 		command_list_->SetGraphicsRootSignature(root_signature_.Get());
@@ -460,13 +475,6 @@ protected:
 		command_list_->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 		command_list_->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		/*
-		const D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view = vertex_buffer_.get_vertex_view();
-		command_list_->IASetVertexBuffers(0, 1, &vertex_buffer_view);
-		const D3D12_INDEX_BUFFER_VIEW index_buffer_view = index_buffer_.get_index_view();
-		command_list_->IASetIndexBuffer(&index_buffer_view);
-		*/
-
 		command_list_->ExecuteIndirect(command_signature_.Get(), indirect_draw_commands_.elements_num()
 			, indirect_draw_commands_.get_resource(), 0
 			, indirect_draw_commands_.get_resource(), indirect_draw_commands_.get_counter_offset());
@@ -482,7 +490,8 @@ protected:
 		ThrowIfFailed(allocator->Reset());
 		ThrowIfFailed(command_list_->Reset(allocator, nullptr));
 		RegisterMeshes();
-		DrawSceneColor();
+		//Filter nodes 
+		DrawPass();
 		ThrowIfFailed(command_list_->Close());
 	}
 
@@ -495,37 +504,6 @@ protected:
 		common_.direct_command_queue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 		ThrowIfFailed(common_.swap_chain->Present(1, 0));
 		MoveToNextFrame();
-	}
-
-	void InitializeAssets()
-	{
-		{	//vertex buffer.
-			const Vertex triangle_vertices[] =
-			{
-				{ { 0.0f, 0.25f, 0.0f    }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} },
-				{ { 0.25f, -0.25f, 0.0f  }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} },
-				{ { -0.25f, -0.25f, 0.0f }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} }
-			};
-
-			Construct(vertex_buffer_, triangle_vertices, _countof(triangle_vertices), common_.device.Get(), 
-				command_list_.Get(), upload_buffer_, &buffers_heap_);
-		}
-
-		{	//Index Buffer
-			const uint32_t indices[] = { 0, 1, 2 };
-
-			Construct(index_buffer_, indices, _countof(indices), common_.device.Get(),
-				command_list_.Get(), upload_buffer_, &buffers_heap_);
-		}
-
-		{
-			const D3D12_DRAW_INDEXED_ARGUMENTS args{ index_buffer_.elements_num() , 1, 0, 0, 0};
-			const IndirectCommand indirect_commands[] = {
-				{ XMFLOAT4X4(), index_buffer_.get_index_view(), vertex_buffer_.get_vertex_view(), XMUINT2(), args}
-			};
-			Construct(indirect_draw_commands_, indirect_commands, _countof(indirect_commands), common_.device.Get(),
-				command_list_.Get(), upload_buffer_, &buffers_heap_);
-		}
 	}
 
 	void ThreadInitialize() override
@@ -600,7 +578,8 @@ protected:
 		ThrowIfFailed(common_.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, common_.command_allocators[common_.frame_index].Get(), nullptr, IID_PPV_ARGS(&command_list_)));
 		NAME_D3D12_OBJECT(command_list_);
 
-		InitializeAssets();
+		Construct<IndirectCommand>(indirect_draw_commands_, nullptr, Const::kStaticInstancesCapacity, common_.device.Get(),
+			command_list_.Get(), upload_buffer_, &buffers_heap_);
 
 		ThrowIfFailed(command_list_->Close());
 
@@ -621,8 +600,6 @@ protected:
 		command_signature_.Reset();
 		pipeline_state_.Reset();
 
-		vertex_buffer_.destroy();
-		index_buffer_.destroy();
 		indirect_draw_commands_.destroy();
 		buffers_heap_.destroy();
 		upload_buffer_.destroy();

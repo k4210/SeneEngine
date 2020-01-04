@@ -322,7 +322,7 @@ template<typename Element, typename Buffer> static bool Construct(
 
 	if constexpr (std::is_same_v<Buffer, UavCountedBuffer>)
 	{
-		const uint32_t counter_value = elements ? static_cast<uint32_t>(elements_num) : 0;
+		const uint32_t counter_value = elements ? out_buffer.elements_num() : 0;
 		const auto offset = upload_buffer.data_to_upload(&counter_value, sizeof(uint32_t), alignof(uint32_t));
 		if (!offset.has_value())
 		{

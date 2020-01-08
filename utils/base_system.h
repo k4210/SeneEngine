@@ -1,6 +1,6 @@
 #pragma once
 #include "utils/small_container.h"
-#include "utils/math.h"
+#include "utils/math/Transform.h"
 
 class IBaseSystem
 {
@@ -62,9 +62,9 @@ protected:
 	}
 	
 	void Open() override { CustomOpen(); open_ = true; thread_ = std::thread(&BaseSystemImpl::SystemLoop, this); }
-	bool IsOpen() const override { assert(thread_.joinable() == open_); return open_; }
 	void Close() override { open_ = false; thread_.join(); CustomClose(); }
 public:
+	bool IsOpen() const override { return open_; }
 	void EnqueueMsg(TMsg&& msg) { msg_queue_.Enqueue(std::forward<TMsg>(msg)); }
 };
 
@@ -84,7 +84,7 @@ struct EntityUtils
 		entity.for_each_component(func);
 	}
 
-	template<typename E> static void UpdateTransform(E& entity, Transform transform)
+	template<typename E> static void UpdateTransform(E& entity, Math::Transform transform)
 	{
 		auto func = [transform](auto& comp) { comp.UpdateTransform(transform); };
 		entity.for_each_component(func);

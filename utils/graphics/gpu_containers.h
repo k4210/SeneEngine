@@ -2,7 +2,7 @@
 
 #include "d3dx12.h"
 #include <wrl.h>
-#include "base_app_helper.h"
+#include "../base_app_helper.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -126,12 +126,13 @@ public:
 
 struct CommitedBuffer
 {
-protected:
+	static constexpr D3D12_RESOURCE_STATES kDefaultState = D3D12_RESOURCE_STATE_COMMON;
+
 	ComPtr<ID3D12Resource> resource_;
 	uint32_t elements_num_ = 0;
 	uint32_t element_size_ = 0;
 	D3D12_RESOURCE_STATES state_ = D3D12_RESOURCE_STATE_COPY_DEST;
-
+	
 	void destroy()
 	{
 		resource_.Reset();
@@ -288,6 +289,12 @@ public:
 
 	D3D12_CPU_DESCRIPTOR_HANDLE		get_uav_handle()		const { return uav_.get_cpu_handle(); }
 	uint64_t						get_counter_offset()	const { return counter_offset_; }
+
+	void ResetCounter(ID3D12GraphicsCommandList* command_list, ID3D12Resource* src_resource, uint64_t src_offset)
+	{
+		assert(command_list && src_resource);
+		command_list->CopyBufferRegion(resource_.Get(), counter_offset_, src_resource, src_offset, sizeof(uint32_t));
+	}
 };
 
 template<typename Element, typename Buffer> static bool Construct(
@@ -329,7 +336,7 @@ template<typename Element, typename Buffer> static bool Construct(
 			out_buffer.destroy();
 			return false;
 		}
-		command_list->CopyBufferRegion(out_buffer.get_resource(), out_buffer.get_counter_offset(), upload_buffer.get_resource(), offset.value(), sizeof(uint32_t));
+		out_buffer.ResetCounter(command_list, upload_buffer.get_resource(), offset.value());
 	}
 
 	const D3D12_RESOURCE_STATES new_state = final_state.value_or(Buffer::kDefaultState);

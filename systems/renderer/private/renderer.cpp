@@ -2,7 +2,10 @@
 #include "../renderer_interface.h"
 #include "utils/base_app_helper.h"
 #include "primitives/mesh_data.h"
-
+#include "utils/graphics/command_signature.h"
+#include "utils/graphics/root_signature.h"
+#include "utils/graphics/pipeline_state.h"
+#include <cstddef>
 #ifdef NDEBUG
 #include "compiled_shaders/release/draw_ps.h"
 #include "compiled_shaders/release/draw_vs.h"
@@ -351,14 +354,8 @@ struct IndirectCommand
 	D3D12_INDEX_BUFFER_VIEW index_buffer;
 	D3D12_VERTEX_BUFFER_VIEW vertex_buffer;
 	XMUINT2 texture_index;
+	float mat_val;
 	D3D12_DRAW_INDEXED_ARGUMENTS draw_arg;
-};
-
-class ComputeIndirectPass
-{
-	ComPtr<ID3D12PipelineState> state_;
-
-
 };
 
 class Renderer : public BaseRenderer
@@ -377,11 +374,11 @@ protected:
 
 	DescriptorHeap buffers_heap_;
 	UploadBuffer upload_buffer_;
-
 	UavCountedBuffer filtered_nodes_; //full nodes
 	UavCountedBuffer filtered_instances_; // instance_idx
 	UavCountedBuffer temp_indexes_; //filtered_node' and instance_idx'
 	UavCountedBuffer indirect_draw_commands_;
+	CommitedBuffer reset_counter_src_;
 
 	std::vector<std::shared_ptr<Mesh>> to_register_;
 
@@ -511,43 +508,29 @@ protected:
 		upload_buffer_.initialize(common_.device.Get(), 1024 * 1024);
 
 		{
-			CD3DX12_ROOT_PARAMETER1 root_params[2];
-			root_params[0].InitAsConstants(16, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-			root_params[1].InitAsConstants(2, 0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-
-			CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC root_signature_desc;
-			root_signature_desc.Init_1_1(_countof(root_params), root_params, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-			ComPtr<ID3DBlob> signature;
-			ComPtr<ID3DBlob> error;
-			ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&root_signature_desc, common_.feature_data.HighestVersion, &signature, &error));
-			ThrowIfFailed(common_.device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&root_signature_)));
+			RootSignature builder(2, 0);
+			builder[0].InitAsConstants(0, 16, D3D12_SHADER_VISIBILITY_VERTEX);
+			builder[1].InitAsConstants(0, 3, D3D12_SHADER_VISIBILITY_PIXEL);
+			root_signature_ = builder.Finalize(common_.device.Get(), common_.feature_data.HighestVersion,
+				D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 			NAME_D3D12_OBJECT(root_signature_);
 		}
 
 		{
-			D3D12_INDIRECT_ARGUMENT_DESC arguments[5] = {};
-			arguments[0].Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT;
-			arguments[0].Constant.RootParameterIndex = 0;
-			arguments[0].Constant.Num32BitValuesToSet = 16;
-			arguments[0].Constant.DestOffsetIn32BitValues = 0;
-			arguments[1].Type = D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW;
-			arguments[2].Type = D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW;
-			arguments[2].VertexBuffer.Slot = 0;
-			arguments[3].Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT;
-			arguments[3].Constant.RootParameterIndex = 1;
-			arguments[3].Constant.Num32BitValuesToSet = 2;
-			arguments[3].Constant.DestOffsetIn32BitValues = 0;
-			arguments[4].Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
-
-			const uint32_t stride = sizeof(IndirectCommand);
-			const D3D12_COMMAND_SIGNATURE_DESC desc{ stride,_countof(arguments), arguments, 0 };
-			ThrowIfFailed(common_.device->CreateCommandSignature(&desc, root_signature_.Get(), IID_PPV_ARGS(&command_signature_)));
+			CommandSignature builder(5);
+			builder[0].Constant(0, 0, 16);//World Matrix
+			builder[1].IndexBufferView();
+			builder[2].VertexBufferView(0);
+			builder[3].Constant(1, 0, 3);// Material Constants
+			builder[4].DrawIndexed();
+			command_signature_ = builder.Finalize(common_.device.Get(), root_signature_.Get());
+			const auto off = offsetof(IndirectCommand, draw_arg);
+			assert(off);
+			assert(sizeof(IndirectCommand) == builder.GetByteStride());
 			NAME_D3D12_OBJECT(command_signature_);
 		}
 
 		{
-			// Define the vertex input layout.
 			D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
 			{
 				{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -555,6 +538,18 @@ protected:
 				{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 			};
 
+			GraphicsPSO builder;
+			builder.SetRootSignature(root_signature_.Get());
+			builder.SetInputLayout(_countof(inputElementDescs), inputElementDescs);
+			builder.SetVertexShader(g_draw_vs, sizeof(g_draw_vs));
+			builder.SetPixelShader(g_draw_ps, sizeof(g_draw_ps));
+			builder.SetRenderTargetFormat(DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN);
+			builder.SetPrimitiveTopologyType(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+			builder.SetRasterizerState(CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT));
+			builder.SetBlendState(CD3DX12_BLEND_DESC(D3D12_DEFAULT));
+			pipeline_state_ = builder.Finalize(common_.device.Get());
+			NAME_D3D12_OBJECT(pipeline_state_);
+			/*
 			// Describe and create the graphics pipeline state object (PSO).
 			D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 			psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
@@ -572,11 +567,16 @@ protected:
 			psoDesc.SampleDesc.Count = 1;
 			ThrowIfFailed(common_.device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline_state_)));
 			NAME_D3D12_OBJECT(pipeline_state_);
+			*/
 		}
 
 		buffers_heap_.create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 16);
 		ThrowIfFailed(common_.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, common_.command_allocators[common_.frame_index].Get(), nullptr, IID_PPV_ARGS(&command_list_)));
 		NAME_D3D12_OBJECT(command_list_);
+
+		const uint32_t zero_val = 0;
+		Construct<uint32_t>(reset_counter_src_, &zero_val, 1, common_.device.Get(), command_list_.Get()
+			, upload_buffer_, &buffers_heap_, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
 		Construct<IndirectCommand>(indirect_draw_commands_, nullptr, Const::kStaticInstancesCapacity, common_.device.Get(),
 			command_list_.Get(), upload_buffer_, &buffers_heap_);

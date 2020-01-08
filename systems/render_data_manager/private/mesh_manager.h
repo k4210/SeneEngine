@@ -8,7 +8,7 @@ class MeshManager
 	std::vector<std::shared_ptr<Mesh>> pending_remove_;
 	std::vector<std::shared_ptr<Mesh>> pending_add_;
 
-	bool AddMeshGPU(StructBuffer& mesh_buffer, Mesh& mesh, ID3D12GraphicsCommandList* command_list, UploadBuffer& upload_buffer)
+	bool AddMeshGPU(StructBuffer& mesh_buffer, const Mesh& mesh, ID3D12GraphicsCommandList* command_list, UploadBuffer& upload_buffer)
 	{
 		const auto reserved_mem = upload_buffer.reserve_space(sizeof(MeshDataGPU), alignof(MeshDataGPU));
 		if (reserved_mem.has_value())
@@ -31,33 +31,22 @@ class MeshManager
 public:
 	MeshManager() { free_mesh_slots_.set(); }
 
-	bool Add(std::shared_ptr<Mesh> mesh)
+	void Add(std::shared_ptr<Mesh> mesh)
 	{
 		assert(mesh);
-		const bool new_mesh = mesh->index == Const::kInvalid;
-		if (new_mesh)
-		{
-			const auto free_slot = free_mesh_slots_.find_first();
-			assert(free_slot != Bitset2::bitset2<Const::kMeshCapacity>::npos);
-			free_mesh_slots_.set(free_slot, false);
-			mesh->index = static_cast<uint32_t>(free_slot);
-
-			pending_add_.push_back(mesh);
-		}
-		mesh->instances++;
-		return new_mesh;
+		const auto free_slot = free_mesh_slots_.find_first();
+		assert(free_slot != Bitset2::bitset2<Const::kMeshCapacity>::npos);
+		free_mesh_slots_.set(free_slot, false);
+		assert(mesh->index == Const::kInvalid);
+		mesh->index = static_cast<uint32_t>(free_slot);
+		pending_add_.push_back(mesh);
 	}
 
 	void Remove(std::shared_ptr<Mesh> mesh)
 	{
 		assert(mesh->index != Const::kInvalid);
-		assert(mesh->instances);
 		assert(mesh->ready_to_render());
-		mesh->instances--;
-		if (!mesh->instances)
-		{
-			pending_remove_.push_back(mesh);
-		}
+		pending_remove_.push_back(mesh);
 	}
 
 	void FlushPendingRemove()
@@ -69,9 +58,15 @@ public:
 			free_mesh_slots_.set(mesh->index, true);
 			mesh->index = Const::kInvalid;
 			mesh->added_in_batch = Const::kInvalid;
-
 		}
 		pending_remove_.clear();
+	}
+
+	void Clear()
+	{
+		FlushPendingRemove();
+		pending_add_.clear();
+		free_mesh_slots_.set();
 	}
 
 	EUpdateResult Update(StructBuffer& mesh_buffer, ID3D12GraphicsCommandList* command_list, UploadBuffer& upload_buffer)

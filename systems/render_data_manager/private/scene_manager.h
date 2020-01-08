@@ -17,7 +17,7 @@ class SceneManager
 	std::array<SceneNodeInstances, Const::kStaticNodesCapacity> inst_per_node_; //SIZE: 16 * 8 * 4096 = 512KB
 
 	Bitset2::bitset2<Const::kStaticNodesCapacity> free_instance_grups_;
-	std::vector<MeshComponent*> pending_instances_;
+	std::vector<MeshComponent*> pending_instances_; //wait until mesh is ready
 	std::vector<MeshComponent*> pending_gpu_instances_updates_;
 	uint32_t num_nodes_ = 0;
 	bool dirty_ = false;
@@ -136,7 +136,7 @@ class SceneManager
 		}
 		else
 		{
-			//recalculate size
+			//TODO: recalculate Bounding Sphere size
 		}
 	}
 
@@ -156,7 +156,6 @@ public:
 			, upload_buffer.get_resource(), offset, num_nodes_ * sizeof(SceneNodeGPU));
 	}
 
-	// returns if all updates were submitted
 	EUpdateResult UpdateInstancesBuffer(StructBuffer& instances_buffer, ID3D12GraphicsCommandList* command_list, UploadBuffer& upload_buffer)
 	{
 		const int32_t local_size = static_cast<int32_t>(pending_gpu_instances_updates_.size());
@@ -187,6 +186,7 @@ public:
 	{
 		assert(instances_.is_set(&instance));
 		assert(instance.mesh);
+		instance.mesh->instances++;
 		if (instance.mesh->ready_to_render())
 		{
 			AddToHierarchy(instance);
@@ -197,17 +197,47 @@ public:
 		}
 	}
 
-	void RemoveAndFree(MeshComponent& instance)
+	std::shared_ptr<Mesh> RemoveAndFree(MeshComponent& instance, bool remove_from_pending = true)
 	{
 		assert(instances_.is_set(&instance));
+		assert(instance.mesh);
+		assert(instance.mesh->instances);
+		std::shared_ptr<Mesh> mesh = instance.mesh;
+		instance.mesh->instances--;
 		if (instance.is_sync_gpu())
 		{
 			RemoveFromHierarchy(instance);
-			return;
 		}
-		auto found = std::find(pending_instances_.begin(), pending_instances_.end(), &instance);
-		assert((found != pending_instances_.end()) && *found);
-		pending_instances_.erase(found);
+		else if (remove_from_pending)
+		{
+			auto found = std::find(pending_instances_.begin(), pending_instances_.end(), &instance);
+			assert((found != pending_instances_.end()) && *found);
+			pending_instances_.erase(found);
+		}
+		return !mesh->instances ? mesh : nullptr;
+	}
+
+	void Clear(std::function<void(std::shared_ptr<Mesh>)> remove_mesh)
+	{
+		auto conditional_free = [&](MeshComponent& instance) 
+		{ 
+			if (instance.mesh->instances)
+			{
+				auto mesh = RemoveAndFree(instance, false);
+				if (mesh)
+				{
+					remove_mesh(mesh);
+				}
+			}
+		};
+		instances_.for_each(conditional_free);
+		pending_instances_.clear();
+		pending_gpu_instances_updates_.clear();
+		free_instance_grups_.set();
+		nodes_.reset();
+		num_nodes_ = 0;
+		dirty_ = false;
+		ZeroMemory(&inst_per_node_, sizeof(inst_per_node_));
 	}
 
 	void CompactNodes()

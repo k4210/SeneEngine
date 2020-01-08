@@ -3,44 +3,6 @@
 #include "mesh_manager.h"
 #include "scene_manager.h"
 
-struct MeshesWaitingForRT
-{
-private:
-	std::vector<std::shared_ptr<Mesh>> unregister_meshes_[2];
-	uint32_t active_unregister_meshes_ = 0;
-
-public:
-	void Add(std::shared_ptr<Mesh>&& mesh)
-	{
-		unregister_meshes_[active_unregister_meshes_].push_back(mesh);
-	}
-
-	void Send()
-	{
-		active_unregister_meshes_ = 1 - active_unregister_meshes_;
-		auto& ready_to_register = unregister_meshes_[active_unregister_meshes_];
-		if (ready_to_register.size())
-		{
-			IRenderer::EnqueueMsg({ IRenderer::RT_MSG_RegisterMeshes { std::move(ready_to_register) } });
-			ready_to_register.clear();
-		}
-	}
-};
-
-template<typename T>
-struct Twins
-{
-private:
-	T buffers_[2];
-	uint32_t active_ = 0;
-
-public:
-	T& GetFirst()		{ return buffers_[0]; }
-	T& GetSecond()		{ return buffers_[1]; }
-	T& GetActiveNode()	{ return buffers_[active_]; }
-	void FlipActive() { active_ = 1 - active_; }
-};
-
 struct GPUCommands
 {
 private:
@@ -134,17 +96,23 @@ public:
 		return promise;
 	}
 
-	void WaitForRT(bool&)
+	void WaitForRT(volatile bool& open)
 	{
 		assert(rt_future_.valid());
-		rt_future_.wait(); //TODO: make loop , and check exit
+		for (std::future_status status = std::future_status::deferred;
+			(status != std::future_status::ready) && open;
+			status = rt_future_.wait_for(Microsecond{ 8000 }));
+		if (!open)
+			return;
 		assert(rt_future_.valid());
 		const auto [rt_fence, rt_fence_value] = rt_future_.get();
 		assert(rt_fence);
 		if (rt_fence->GetCompletedValue() < rt_fence_value)
 		{
 			ThrowIfFailed(rt_fence->SetEventOnCompletion(rt_fence_value, fence_event_));
-			WaitForSingleObjectEx(fence_event_, INFINITE, FALSE); //TODO: make loop , and check exit
+			for (DWORD  status = WAIT_TIMEOUT;
+				(status == WAIT_TIMEOUT) && open;
+				status = WaitForSingleObjectEx(fence_event_, 8, FALSE));
 		}
 	}
 
@@ -169,7 +137,7 @@ class RenderDataManager : public BaseSystemImpl<RDM_MSG>
 protected:
 	SceneManager scene_;
 	MeshManager meshes_;
-	MeshesWaitingForRT waiting_meshes_;
+	Twins<std::vector<std::shared_ptr<Mesh>>> waiting_meshes_;
 	SyncFence fence_;
 
 	UploadBuffer upload_buffer_;
@@ -197,24 +165,25 @@ protected:
 	{
 		assert(msg.component);
 		MeshComponent& instance = *msg.component;
-		scene_.Add(instance);
 		assert(instance.mesh);
-		const bool new_mesh = meshes_.Add(instance.mesh);
-		if (new_mesh)
+		if (instance.mesh->index == Const::kInvalid)
 		{
+			meshes_.Add(instance.mesh);
 			assert(instance.mesh->added_in_batch == Const::kInvalid);
 			instance.mesh->added_in_batch.store(actual_batch_ + 1);
-			waiting_meshes_.Add(std::move(instance.mesh));
+			waiting_meshes_.GetActiveNode().push_back(instance.mesh);
 		}
+		scene_.Add(instance);
 	}
 
 	void operator()(RDM_MSG_RemoveComponent msg) 
 	{
 		assert(msg.component);
-		std::shared_ptr<Mesh> mesh = msg.component->mesh;
-		scene_.RemoveAndFree(*msg.component);
-		assert(mesh);
-		meshes_.Remove(mesh);
+		std::shared_ptr<Mesh> mesh_to_remove = scene_.RemoveAndFree(*msg.component);
+		if (mesh_to_remove)
+		{
+			meshes_.Remove(mesh_to_remove);
+		}
 	}
 
 protected:
@@ -244,6 +213,10 @@ protected:
 	{
 		fence_.WaitForGPU(commands_);
 		fence_.Destroy();
+		auto remove_mesh = [&](std::shared_ptr<Mesh> mesh) {meshes_.Remove(mesh);};
+		scene_.Clear(remove_mesh);
+		meshes_.Clear();
+		commands_.Destroy();
 	}
 
 	void HandleSingleMessage(RDM_MSG& msg) override { std::visit([&](auto&& arg) { (*this)(std::move(arg)); }, msg); }
@@ -256,7 +229,16 @@ protected:
 
 		// 1. Wait for last update (5). Reopen CL, reset upload.
 		fence_.WaitForGPU(commands_);
-		waiting_meshes_.Send();
+		waiting_meshes_.FlipActive();
+		auto send_loaded_meshes = [](std::vector<std::shared_ptr<Mesh>>& ready_to_register)
+		{
+			if (ready_to_register.size())
+			{
+				IRenderer::EnqueueMsg({ IRenderer::RT_MSG_RegisterMeshes { std::move(ready_to_register) } });
+				ready_to_register.clear();
+			}
+		};
+		send_loaded_meshes(waiting_meshes_.GetActiveNode());
 		commands_.Reopen();
 		upload_buffer_.reset();
 		actual_batch_++;
@@ -276,6 +258,8 @@ protected:
 		bool must_sync_rt = false;
 		while(true)
 		{
+			if (!IsOpen())
+				return;
 			const EUpdateResult local_status = scene_.UpdateInstancesBuffer(instances_buffer_, commands_.GetCommandList(), upload_buffer_);
 			if (local_status == EUpdateResult::NoUpdateRequired && !nodes_update_requiried)
 				break;
@@ -326,7 +310,7 @@ protected:
 
 		const Microsecond duration = GetTime() - start_time;
 		const Microsecond budget{ 7000 };
-		if (duration < budget)
+		if (IsOpen() && duration < budget)
 		{
 			std::this_thread::sleep_for(budget - duration);
 		}
@@ -345,6 +329,7 @@ void MeshHandle::Initialize(std::shared_ptr<Mesh>&& mesh, Transform&& transform)
 void MeshHandle::UpdateTransform(Transform)
 {
 	//render_data_manager->EnqueueMsg(RDM_MSG{ RDM_MSG_UpdateTransform{ component_, transform } });
+
 }
 
 void MeshHandle::Cleanup()

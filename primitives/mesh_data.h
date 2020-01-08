@@ -1,8 +1,10 @@
 #pragma once
 
-#include <vector>
-#include "utils/gpu_containers.h"
-#include "utils/math.h"
+#include "utils/graphics/gpu_containers.h"
+#include "utils/math/VectorMath.h"
+
+using namespace DirectX;
+using namespace Math;
 
 struct Vertex
 {

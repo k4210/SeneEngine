@@ -2,6 +2,21 @@
 #include <algorithm>
 #include "third_party/bitset2/bitset2.hpp" 
 
+template<typename T>
+struct Twins
+{
+private:
+	std::array<T, 2> buffers_;
+	uint32_t active_ = 0;
+
+public:
+	T& GetFirst() { return buffers_[0]; }
+	T& GetSecond() { return buffers_[1]; }
+	T& GetActiveNode() { return buffers_[active_]; }
+	const T& GetActiveNode() const { return buffers_[active_]; }
+	void FlipActive() { active_ = 1 - active_; }
+};
+
 template<typename T> void RemoveSwap(std::vector<T>& vec, std::size_t idx)
 {
 	assert(vec.size() > idx);

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "utils/base_system.h"
-#include "utils/gpu_containers.h"
-#include "utils/math.h"
+#include "utils/graphics/gpu_containers.h"
+#include "utils/math/Transform.h"
 #include "primitives/mesh_data.h"
 
 namespace IRenderDataManager

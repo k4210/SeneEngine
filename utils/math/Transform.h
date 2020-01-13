@@ -115,7 +115,7 @@ namespace Math
     struct Transform
 	{
 		XMFLOAT3 translate = XMFLOAT3(0, 0, 0);
+        float scale = 1.0f;
 		XMFLOAT4 rotation = XMFLOAT4(0, 0, 0, 1); // quaternion
-		float scale = 1.0f;
 	};
 }

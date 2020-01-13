@@ -9,9 +9,11 @@
 #ifdef NDEBUG
 #include "compiled_shaders/release/draw_ps.h"
 #include "compiled_shaders/release/draw_vs.h"
+#include "compiled_shaders/release/generate_draw_commands_cs.h"
 #else
 #include "compiled_shaders/debug/draw_ps.h"
 #include "compiled_shaders/debug/draw_vs.h"
+#include "compiled_shaders/debug/generate_draw_commands_cs.h"
 #endif
 
 using namespace DirectX;
@@ -348,9 +350,9 @@ protected:
 	}
 };
 
-struct IndirectCommand
+struct IndirectCommandGPU
 {
-	XMFLOAT4X4 world;
+	XMFLOAT4X4 wvp_mtx;
 	D3D12_INDEX_BUFFER_VIEW index_buffer;
 	D3D12_VERTEX_BUFFER_VIEW vertex_buffer;
 	XMUINT2 texture_index;
@@ -358,49 +360,74 @@ struct IndirectCommand
 	D3D12_DRAW_INDEXED_ARGUMENTS draw_arg;
 };
 
+struct Pass
+{
+	ComPtr<ID3D12RootSignature> root_signature_;
+	ComPtr<ID3D12PipelineState> pipeline_state_;
+
+	void Destroy()
+	{
+		root_signature_.Reset();
+		pipeline_state_.Reset();
+	}
+};
+
+struct Descriptors
+{
+	constexpr static uint32_t indirect_draw_commands_uav = 0;
+	constexpr static uint32_t meshes_buff_srv = 1;
+	constexpr static uint32_t static_instances_srv = 2;
+	constexpr static uint32_t static_nodes_srv = 3;
+	constexpr static uint32_t total_num = 4;
+};
+
 class Renderer : public BaseRenderer
 {
 protected:
-	ComPtr<ID3D12RootSignature> root_signature_;
+
 	ComPtr<ID3D12GraphicsCommandList> command_list_;
 	ComPtr<ID3D12CommandSignature> command_signature_;
 
-	ComPtr<ID3D12PipelineState> state_filter_frustum_nodes_;		// CS:						-> filtered_nodes_
-	ComPtr<ID3D12PipelineState> state_filter_depth_nodes_;			// CS: filtered_nodes_		-> temp_indexes_
-	ComPtr<ID3D12PipelineState> state_filter_frustum_instances_;	// CS: temp_indexes_		-> filtered_instances_
-	ComPtr<ID3D12PipelineState> state_filter_depth_instances_;		// CS: filtered_instances_	-> temp_indexes_
-	ComPtr<ID3D12PipelineState> state_generate_draw_commands_;		// CS: temp_indexes_		-> indirect_draw_commands_
-	ComPtr<ID3D12PipelineState> pipeline_state_;
+	//ComPtr<ID3D12PipelineState> state_filter_frustum_nodes_;		// CS:						-> filtered_nodes_
+	//ComPtr<ID3D12PipelineState> state_filter_depth_nodes_;		// CS: filtered_nodes_		-> temp_indexes_
+	//ComPtr<ID3D12PipelineState> state_filter_frustum_instances_;	// CS: temp_indexes_		-> filtered_instances_
+	//ComPtr<ID3D12PipelineState> state_filter_depth_instances_;	// CS: filtered_instances_	-> temp_indexes_
+	Pass generate_draw_commands_;		// CS: temp_indexes_		-> indirect_draw_commands_
+	Pass render_;
 
-	DescriptorHeap buffers_heap_;
+	DescriptorHeap persistent_descriptor_heap_;
+	Twins<DescriptorHeap> buffers_heaps_;
 	UploadBuffer upload_buffer_;
-	UavCountedBuffer filtered_nodes_; //full nodes
-	UavCountedBuffer filtered_instances_; // instance_idx
-	UavCountedBuffer temp_indexes_; //filtered_node' and instance_idx'
+	//UavCountedBuffer filtered_nodes_; //full nodes
+	//UavCountedBuffer filtered_instances_; // instance_idx
+	//UavCountedBuffer temp_indexes_; //filtered_node' and instance_idx'
 	UavCountedBuffer indirect_draw_commands_;
 	CommitedBuffer reset_counter_src_;
 
 	std::vector<std::shared_ptr<Mesh>> to_register_;
 
-	CD3DX12_GPU_DESCRIPTOR_HANDLE meshes_buff;
-	CD3DX12_GPU_DESCRIPTOR_HANDLE static_nodes;
-	CD3DX12_GPU_DESCRIPTOR_HANDLE static_instances;
+	DescriptorHeapElementRef meshes_buff_;
+	DescriptorHeapElementRef static_nodes_;
+	DescriptorHeapElementRef static_instances_;
 
+	bool need_update_descriptors_ = false;
 public:
 	Renderer(HWND hWnd, uint32_t width, uint32_t height) : BaseRenderer(hWnd, width, height) {}
 
 protected:
 	void operator()(RT_MSG_UpdateCamera) {}
 
-	void operator()(RT_MSG_MeshBuffer msg) 
+	void operator()(RT_MSG_MeshBuffer msg)
 	{
-		meshes_buff = msg.meshes_buff;
+		meshes_buff_ = msg.meshes_buff;
+		need_update_descriptors_ = true;
 	}
 
 	void operator()(RT_MSG_StaticBuffers msg)
 	{
-		static_nodes = msg.static_nodes;
-		static_instances = msg.static_instances;
+		static_nodes_ = msg.static_nodes;
+		static_instances_ = msg.static_instances;
+		need_update_descriptors_ = true;
 
 		const uint64_t current_frame_num = common_.fence_values[common_.frame_index];
 		assert(current_frame_num);
@@ -444,17 +471,31 @@ protected:
 		command_list_->ResourceBarrier(static_cast<uint32_t>(barriers.size()), &barriers[0]);
 	}
 
-	void FillCommandsBuffer()
+	void GenerateCommands()
 	{
-		auto is_descriptor_valid = [](D3D12_GPU_DESCRIPTOR_HANDLE desc) -> bool { return desc.ptr != 0; };
-		const bool valid_buffs = is_descriptor_valid(meshes_buff) && is_descriptor_valid(static_nodes) 
-			&& is_descriptor_valid(static_instances);
+		indirect_draw_commands_.reset_counter(command_list_.Get(), reset_counter_src_.get_resource(), 0);
+
+		D3D12_RESOURCE_BARRIER barriers[] = { indirect_draw_commands_.transition_barrier(D3D12_RESOURCE_STATE_UNORDERED_ACCESS) };
+		command_list_->ResourceBarrier(_countof(barriers), barriers);
+
+		auto& desc_heap = buffers_heaps_.GetActive();
+		ID3D12DescriptorHeap* heap_ptr = desc_heap.get_heap();
+		command_list_->SetDescriptorHeaps(1, &heap_ptr);
+		command_list_->SetPipelineState(generate_draw_commands_.pipeline_state_.Get());
+		command_list_->SetComputeRootSignature(generate_draw_commands_.root_signature_.Get());
+		command_list_->SetComputeRoot32BitConstant(0, 1, 0);
+		command_list_->SetComputeRootDescriptorTable(1, desc_heap.get_gpu_handle(0));
+		
+		//command_list_->SetComputeRootShaderResourceView(1, static_instances->GetGPUVirtualAddress());
+		//command_list_->SetComputeRootShaderResourceView(2, meshes_buff->GetGPUVirtualAddress());
+		//command_list_->SetComputeRootUnorderedAccessView(3, indirect_draw_commands_.get_resource()->GetGPUVirtualAddress());
+		command_list_->Dispatch(1, 1, 1);
 	}
 
-	void DrawPass()   
+	void DrawPass()
 	{
-		command_list_->SetPipelineState(pipeline_state_.Get());
-		command_list_->SetGraphicsRootSignature(root_signature_.Get());
+		command_list_->SetPipelineState(render_.pipeline_state_.Get());
+		command_list_->SetGraphicsRootSignature(render_.root_signature_.Get());
 		command_list_->RSSetViewports(1, &common_.viewport);
 		command_list_->RSSetScissorRects(1, &common_.scissor_rect);
 
@@ -475,9 +516,10 @@ protected:
 		command_list_->ExecuteIndirect(command_signature_.Get(), indirect_draw_commands_.elements_num()
 			, indirect_draw_commands_.get_resource(), 0
 			, indirect_draw_commands_.get_resource(), indirect_draw_commands_.get_counter_offset());
-		
-		barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;		barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-		barriers[1] = indirect_draw_commands_.transition_barrier(D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+		barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+		barriers[1] = indirect_draw_commands_.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST);
 		command_list_->ResourceBarrier(_countof(barriers), barriers);
 	}
 
@@ -487,15 +529,36 @@ protected:
 		ThrowIfFailed(allocator->Reset());
 		ThrowIfFailed(command_list_->Reset(allocator, nullptr));
 		RegisterMeshes();
-		//Filter nodes 
+		GenerateCommands();
 		DrawPass();
 		ThrowIfFailed(command_list_->Close());
 	}
 
 	void HandleSingleMessage(RT_MSG& msg) override { std::visit([&](auto&& arg) { (*this)(std::move(arg)); }, msg); }
 
+	void UpdateDescriptorsHeap()
+	{
+		if (!need_update_descriptors_)
+			return;
+		buffers_heaps_.FlipActive();
+		DescriptorHeap& heap = buffers_heaps_.GetActive();
+		heap.clear(Descriptors::total_num);
+		auto device = common_.device.Get();
+		CopyDescriptor(device, heap, indirect_draw_commands_.get_uav_handle(), Descriptors::indirect_draw_commands_uav);
+		CopyDescriptor(device, heap, meshes_buff_, Descriptors::meshes_buff_srv);
+		CopyDescriptor(device, heap, static_nodes_, Descriptors::static_nodes_srv);
+		CopyDescriptor(device, heap, static_instances_, Descriptors::static_instances_srv);
+
+		need_update_descriptors_ = false;
+	}
+
 	void Tick() override
 	{
+		if (!meshes_buff_ || !static_nodes_ || !static_instances_)
+			return;
+
+		UpdateDescriptorsHeap();
+
 		PopulateCommandList();
 		ID3D12CommandList* ppCommandLists[] = { command_list_.Get() };
 		common_.direct_command_queue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
@@ -511,9 +574,9 @@ protected:
 			RootSignature builder(2, 0);
 			builder[0].InitAsConstants(0, 16, D3D12_SHADER_VISIBILITY_VERTEX);
 			builder[1].InitAsConstants(0, 3, D3D12_SHADER_VISIBILITY_PIXEL);
-			root_signature_ = builder.Finalize(common_.device.Get(), common_.feature_data.HighestVersion,
+			render_.root_signature_ = builder.Finalize(common_.device.Get(), common_.feature_data.HighestVersion,
 				D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-			NAME_D3D12_OBJECT(root_signature_);
+			NAME_D3D12_OBJECT(render_.root_signature_);
 		}
 
 		{
@@ -523,10 +586,8 @@ protected:
 			builder[2].VertexBufferView(0);
 			builder[3].Constant(1, 0, 3);// Material Constants
 			builder[4].DrawIndexed();
-			command_signature_ = builder.Finalize(common_.device.Get(), root_signature_.Get());
-			const auto off = offsetof(IndirectCommand, draw_arg);
-			assert(off);
-			assert(sizeof(IndirectCommand) == builder.GetByteStride());
+			command_signature_ = builder.Finalize(common_.device.Get(), render_.root_signature_.Get());
+			assert(sizeof(IndirectCommandGPU) == builder.GetByteStride());
 			NAME_D3D12_OBJECT(command_signature_);
 		}
 
@@ -539,7 +600,7 @@ protected:
 			};
 
 			GraphicsPSO builder;
-			builder.SetRootSignature(root_signature_.Get());
+			builder.SetRootSignature(render_.root_signature_.Get());
 			builder.SetInputLayout(_countof(inputElementDescs), inputElementDescs);
 			builder.SetVertexShader(g_draw_vs, sizeof(g_draw_vs));
 			builder.SetPixelShader(g_draw_ps, sizeof(g_draw_ps));
@@ -547,39 +608,40 @@ protected:
 			builder.SetPrimitiveTopologyType(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 			builder.SetRasterizerState(CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT));
 			builder.SetBlendState(CD3DX12_BLEND_DESC(D3D12_DEFAULT));
-			pipeline_state_ = builder.Finalize(common_.device.Get());
-			NAME_D3D12_OBJECT(pipeline_state_);
-			/*
-			// Describe and create the graphics pipeline state object (PSO).
-			D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-			psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-			psoDesc.pRootSignature = root_signature_.Get();
-			psoDesc.VS = CD3DX12_SHADER_BYTECODE(g_draw_vs, sizeof(g_draw_vs));
-			psoDesc.PS = CD3DX12_SHADER_BYTECODE(g_draw_ps, sizeof(g_draw_ps));
-			psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-			psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-			psoDesc.DepthStencilState.DepthEnable = FALSE;
-			psoDesc.DepthStencilState.StencilEnable = FALSE;
-			psoDesc.SampleMask = UINT_MAX;
-			psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-			psoDesc.NumRenderTargets = 1;
-			psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-			psoDesc.SampleDesc.Count = 1;
-			ThrowIfFailed(common_.device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline_state_)));
-			NAME_D3D12_OBJECT(pipeline_state_);
-			*/
+			render_.pipeline_state_ = builder.Finalize(common_.device.Get());
+			NAME_D3D12_OBJECT(render_.pipeline_state_);
 		}
 
-		buffers_heap_.create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 16);
+		{
+			RootSignature builder(2, 0);
+			builder[0].InitAsConstants(0, 1);
+			builder[1].InitAsDescriptorTable(2);
+			builder[1].SetTableRange(0, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1);
+			builder[1].SetTableRange(1, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 3);
+			generate_draw_commands_.root_signature_ = builder.Finalize(common_.device.Get(), common_.feature_data.HighestVersion);
+			NAME_D3D12_OBJECT(generate_draw_commands_.root_signature_);
+		}
+
+		{
+			ComputePSO builder;
+			builder.SetComputeShader(g_generate_draw_commands_cs, sizeof(g_generate_draw_commands_cs));
+			builder.SetRootSignature(generate_draw_commands_.root_signature_.Get());
+			generate_draw_commands_.pipeline_state_ = builder.Finalize(common_.device.Get());
+			NAME_D3D12_OBJECT(generate_draw_commands_.pipeline_state_);
+		}
+
+		persistent_descriptor_heap_.create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,			Descriptors::total_num);
+		buffers_heaps_.GetFirst()  .create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, Descriptors::total_num);
+		buffers_heaps_.GetSecond() .create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, Descriptors::total_num);
 		ThrowIfFailed(common_.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, common_.command_allocators[common_.frame_index].Get(), nullptr, IID_PPV_ARGS(&command_list_)));
 		NAME_D3D12_OBJECT(command_list_);
 
 		const uint32_t zero_val = 0;
 		Construct<uint32_t>(reset_counter_src_, &zero_val, 1, common_.device.Get(), command_list_.Get()
-			, upload_buffer_, &buffers_heap_, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			, upload_buffer_, nullptr, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
-		Construct<IndirectCommand>(indirect_draw_commands_, nullptr, Const::kStaticInstancesCapacity, common_.device.Get(),
-			command_list_.Get(), upload_buffer_, &buffers_heap_);
+		Construct<IndirectCommandGPU, UavCountedBuffer>(indirect_draw_commands_, nullptr, Const::kStaticInstancesCapacity, common_.device.Get(),
+			command_list_.Get(), upload_buffer_, &persistent_descriptor_heap_, { D3D12_RESOURCE_STATE_COPY_DEST });
 
 		ThrowIfFailed(command_list_->Close());
 
@@ -596,12 +658,15 @@ protected:
 		BaseRenderer::ThreadCleanUp();
 
 		command_list_.Reset();
-		root_signature_.Reset();
 		command_signature_.Reset();
-		pipeline_state_.Reset();
+
+		render_.Destroy();
+		generate_draw_commands_.Destroy();
 
 		indirect_draw_commands_.destroy();
-		buffers_heap_.destroy();
+		buffers_heaps_.GetFirst().destroy();
+		buffers_heaps_.GetSecond().destroy();
+		persistent_descriptor_heap_.destroy();
 		upload_buffer_.destroy();
 	}
 };

@@ -93,7 +93,7 @@ public:
     void SetComputeShader( const void* Binary, size_t Size ) { m_PSODesc.CS = CD3DX12_SHADER_BYTECODE(const_cast<void*>(Binary), Size); }
     void SetComputeShader( const D3D12_SHADER_BYTECODE& Binary ) { m_PSODesc.CS = Binary; }
 
-    void Finalize(ID3D12Device* device);
+    ID3D12PipelineState* Finalize(ID3D12Device* device);
 
 private:
 

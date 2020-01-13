@@ -5,8 +5,9 @@ void DescriptorHeap::create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE typ
 {
 	assert(device);
 	assert(!heap_);
-	D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{ type, capacity, flags, 0 };
-	ThrowIfFailed(device->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&heap_)));
+	D3D12_DESCRIPTOR_HEAP_DESC heap_desc{ type, capacity, flags, 0 };
+	ThrowIfFailed(device->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&heap_)));
+	type_ = type;
 	descriptor_size_ = device->GetDescriptorHandleIncrementSize(type);
 
 	taken_slots_.resize(capacity, false);
@@ -30,8 +31,31 @@ uint32_t DescriptorHeap::allocate()
 
 void DescriptorHeap::free(uint32_t idx)
 {
-	assert(taken_slots_[idx]);
+	assert(is_set(idx));
 	taken_slots_[idx] = false;
+}
+
+void DescriptorHeap::copy(ID3D12Device* device, uint32_t num, uint32_t dst_start, uint32_t src_start, const DescriptorHeap& src_heap)
+{
+	assert(device);
+	assert(type_ == src_heap.type_);
+	assert(dst_start + num <= get_capacity());
+	assert(src_start + num <= src_heap.get_capacity());
+	assert([&]() -> bool
+	{
+		for (uint32_t idx = 0; idx < num; idx++)
+		{
+			if (!src_heap.is_set(src_start + idx))
+				return false;
+		}
+		return true;
+	}());
+
+	device->CopyDescriptorsSimple(num, get_cpu_handle(dst_start), src_heap.get_cpu_handle(src_start), type_);
+	for (uint32_t idx = 0; idx < num; idx++) 
+	{ 
+		taken_slots_[dst_start + idx] = true;
+	}
 }
 
 void CommitedBuffer::create_resource(ID3D12Device* device)
@@ -75,7 +99,7 @@ void UavCountedBuffer::create_views(ID3D12Device* device, DescriptorHeap* descri
 	uavDesc.Buffer.FirstElement = 0;
 	uavDesc.Buffer.NumElements = elements_num_;
 	uavDesc.Buffer.StructureByteStride = element_size_;
-	uavDesc.Buffer.CounterOffsetInBytes = counter_offset_;
+	uavDesc.Buffer.CounterOffsetInBytes = counter_offset_bytes_;
 	uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 	device->CreateUnorderedAccessView(resource_.Get(), resource_.Get(), &uavDesc, uav_.get_cpu_handle());
 }

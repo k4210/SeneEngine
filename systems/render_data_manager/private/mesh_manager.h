@@ -18,9 +18,8 @@ class MeshManager
 				MeshDataGPU& data = *reinterpret_cast<MeshDataGPU*>(dst_ptr);
 				data.index_buffer = mesh.index_buffer.get_index_view();
 				data.vertex_buffer = mesh.vertex_buffer.get_vertex_view();
-				assert(mesh.mesh_data.has_value());
-				data.radius = mesh.radius;
 				data.texture_idx[0] = data.texture_idx[1] = 0;
+				data.material_value = 1.0f;
 			}
 			command_list->CopyBufferRegion(mesh_buffer.get_resource(), mesh.index * sizeof(MeshDataGPU)
 				, upload_buffer.get_resource(), offset, sizeof(MeshDataGPU));

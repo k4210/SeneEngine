@@ -16,45 +16,56 @@ struct DescriptorHeap
 {
 protected:
 	ComPtr<ID3D12DescriptorHeap> heap_;
+	D3D12_DESCRIPTOR_HEAP_TYPE type_ = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES;
 	uint32_t descriptor_size_ = 0;
 	std::vector<bool> taken_slots_;
 
 public:
-	void create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, uint32_t capacity, uint32_t initially_allocated = 0);
-
-	void destroy()
-	{
-		taken_slots_.clear();
-		heap_.Reset();
-		descriptor_size_ = 0;
-	}
+	ID3D12DescriptorHeap* get_heap() const { return heap_.Get(); }
+	uint32_t get_capacity() const { return static_cast<uint32_t>(taken_slots_.size()); }
+	bool is_set(uint32_t idx) const { return taken_slots_[idx]; }
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE get_cpu_handle(uint32_t idx) const
 	{
 		assert(heap_);
-		assert(idx < taken_slots_.size());
+		assert(idx < get_capacity());
+		assert(is_set(idx));
 		return CD3DX12_CPU_DESCRIPTOR_HANDLE(heap_->GetCPUDescriptorHandleForHeapStart(), idx, descriptor_size_);
 	}
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE get_gpu_handle(uint32_t idx) const
 	{
 		assert(heap_);
-		assert(idx < taken_slots_.size());
+		assert(idx < get_capacity());
+		assert(is_set(idx));
 		return CD3DX12_GPU_DESCRIPTOR_HANDLE(heap_->GetGPUDescriptorHandleForHeapStart(), idx, descriptor_size_);
 	}
 
-	ID3D12DescriptorHeap* get_heap() const { return heap_.Get(); }
-
+	void create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, uint32_t capacity, uint32_t initially_allocated = 0);
 	uint32_t allocate();
+	void copy(ID3D12Device* device, uint32_t num, uint32_t dst_start, uint32_t src_start, const DescriptorHeap& src_heap);
 	void free(uint32_t idx);
+	void clear(uint32_t initially_allocated = 0)
+	{
+		for (uint32_t idx = 0; idx < taken_slots_.size(); idx++)
+		{
+			taken_slots_[idx] = initially_allocated > idx;
+		}
+	}
+	void destroy()
+	{
+		taken_slots_.clear();
+		heap_.Reset();
+		descriptor_size_ = 0;
+		type_ = D3D12_DESCRIPTOR_HEAP_TYPE::D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES;
+	}
 };
 
-struct DescriptorHeapElement
+struct DescriptorHeapElementRef
 {
-private:
+protected:
 	DescriptorHeap* descriptor_heap_ = nullptr;
 	uint32_t idx_ = Const::kInvalid;
-
 public:
 	CD3DX12_CPU_DESCRIPTOR_HANDLE get_cpu_handle() const
 	{
@@ -78,17 +89,48 @@ public:
 		idx_ = Const::kInvalid;
 	}
 
-	bool initialize(DescriptorHeap& desc_heap)
+	void clear_no_release()
 	{
-		release();
-		descriptor_heap_ = &desc_heap;
-		idx_ = descriptor_heap_->allocate();
-		return idx_ != Const::kInvalid;
+		descriptor_heap_ = nullptr;
+		idx_ = Const::kInvalid;
 	}
 
+	bool initialize(DescriptorHeap& desc_heap)
+	{
+		assert(!descriptor_heap_ && (idx_ == Const::kInvalid));
+		const auto new_idx = desc_heap.allocate();
+		if (new_idx == Const::kInvalid)
+			return false;
+		descriptor_heap_ = &desc_heap;
+		idx_ = new_idx;
+		return true;
+	}
+
+	void initialize(DescriptorHeap& desc_heap, uint32_t already_allocaded_idx)
+	{
+		assert(already_allocaded_idx != Const::kInvalid);
+		assert(!descriptor_heap_ && (idx_ == Const::kInvalid));
+		descriptor_heap_ = &desc_heap;
+		idx_ = already_allocaded_idx;
+		assert(desc_heap.is_set(idx_));
+	}
+
+	operator bool() const { return descriptor_heap_ && (idx_ != Const::kInvalid); }
+
+	uint32_t get_index() const { return idx_; }
+
+	DescriptorHeap* get_heap() const { return descriptor_heap_; }
+};
+
+struct DescriptorHeapElement : public DescriptorHeapElementRef
+{
 	DescriptorHeapElement() = default;
+	DescriptorHeapElement(DescriptorHeapElementRef&& ref)
+		: DescriptorHeapElementRef(std::forward<DescriptorHeapElementRef>(ref)) {}
 	DescriptorHeapElement(const DescriptorHeapElement&) = delete;
 	DescriptorHeapElement& operator=(const DescriptorHeapElement&) = delete;
+	DescriptorHeapElement(DescriptorHeapElement&& other) = default;
+	/*
 	DescriptorHeapElement(DescriptorHeapElement&& other)
 	{
 		descriptor_heap_ = other.descriptor_heap_;
@@ -100,11 +142,29 @@ public:
 	{
 		std::swap(descriptor_heap_, other.descriptor_heap_);
 		std::swap(idx_, other.idx_);
-	}
+	}*/
 	~DescriptorHeapElement() { release(); }
 
-	operator bool() const { return descriptor_heap_ && (idx_ != Const::kInvalid); }
+	DescriptorHeapElementRef get_ref() const { return *this; }
 };
+
+inline DescriptorHeapElementRef CopyDescriptor(ID3D12Device* device, DescriptorHeap& dst, const DescriptorHeapElementRef& src, uint32_t dst_idx = Const::kInvalid)
+{
+	assert(src);
+	assert(device);
+	DescriptorHeapElementRef result;
+	if (dst_idx == Const::kInvalid)
+	{
+		const bool allocated = result.initialize(dst);
+		assert(allocated);
+	}
+	else
+	{
+		result.initialize(dst, dst_idx);
+	}
+	dst.copy(device, 1, result.get_index(), src.get_index(), *src.get_heap());
+	return result;
+}
 
 class UploadBuffer
 {
@@ -184,10 +244,9 @@ public:
 	using CommitedBuffer::size;
 	using CommitedBuffer::get_state;
 
-	void							destroy()						{ srv_.release(); CommitedBuffer::destroy(); }
-	bool							is_ready()				const	{ return CommitedBuffer::is_ready() && srv_; }
-	D3D12_CPU_DESCRIPTOR_HANDLE		get_srv_handle_cpu()	const	{ return srv_.get_cpu_handle(); }
-	D3D12_GPU_DESCRIPTOR_HANDLE		get_srv_handle_gpu()	const	{ return srv_.get_gpu_handle(); }
+	void							destroy()					{ srv_.release(); CommitedBuffer::destroy(); }
+	bool							is_ready()			const	{ return CommitedBuffer::is_ready() && srv_; }
+	DescriptorHeapElementRef		get_srv_handle()	const	{ return srv_.get_ref(); }
 
 	void create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap);
 };
@@ -252,7 +311,7 @@ struct IndexBuffer32 : protected CommitedBuffer
 struct UavCountedBuffer : protected StructBuffer
 {
 protected:
-	uint64_t counter_offset_ = Const::kInvalid;
+	uint64_t counter_offset_bytes_ = Const::kInvalid;
 	DescriptorHeapElement uav_;
 
 	static inline uint64_t align_for_uav_counter(uint64_t buffer_size)
@@ -271,29 +330,30 @@ public:
 	using StructBuffer::size;
 	using StructBuffer::get_state;
 	using StructBuffer::is_ready;
+	using StructBuffer::get_srv_handle;
 
 	void							destroy()
 	{
-		counter_offset_ = Const::kInvalid64;
+		counter_offset_bytes_ = Const::kInvalid64;
 		uav_.release();
 		StructBuffer::destroy();
 	}
 	void							create_resource(ID3D12Device* device)
 	{
-		counter_offset_ = align_for_uav_counter(size());
-		const D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(counter_offset_ + sizeof(uint32_t), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+		counter_offset_bytes_ = align_for_uav_counter(size());
+		const D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(counter_offset_bytes_ + sizeof(uint32_t), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 		const CD3DX12_HEAP_PROPERTIES heap_prop(D3D12_HEAP_TYPE_DEFAULT);
 		ThrowIfFailed(device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &desc, state_, nullptr, IID_PPV_ARGS(&resource_)));
 	}
 	void							create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap);
 
-	D3D12_CPU_DESCRIPTOR_HANDLE		get_uav_handle()		const { return uav_.get_cpu_handle(); }
-	uint64_t						get_counter_offset()	const { return counter_offset_; }
+	DescriptorHeapElementRef		get_uav_handle()		const { return uav_.get_ref(); }
+	uint64_t						get_counter_offset()	const { return counter_offset_bytes_; }
 
-	void ResetCounter(ID3D12GraphicsCommandList* command_list, ID3D12Resource* src_resource, uint64_t src_offset)
+	void reset_counter(ID3D12GraphicsCommandList* command_list, ID3D12Resource* src_resource, uint64_t src_offset)
 	{
 		assert(command_list && src_resource);
-		command_list->CopyBufferRegion(resource_.Get(), counter_offset_, src_resource, src_offset, sizeof(uint32_t));
+		command_list->CopyBufferRegion(resource_.Get(), counter_offset_bytes_, src_resource, src_offset, sizeof(uint32_t));
 	}
 };
 
@@ -336,7 +396,7 @@ template<typename Element, typename Buffer> static bool Construct(
 			out_buffer.destroy();
 			return false;
 		}
-		out_buffer.ResetCounter(command_list, upload_buffer.get_resource(), offset.value());
+		out_buffer.reset_counter(command_list, upload_buffer.get_resource(), offset.value());
 	}
 
 	const D3D12_RESOURCE_STATES new_state = final_state.value_or(Buffer::kDefaultState);

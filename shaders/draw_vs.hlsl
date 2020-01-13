@@ -1,9 +1,6 @@
-struct PSInput
-{
-    float4 position : SV_POSITION;
-    float4 norm : NORMAL;
-	float2 tex : TEXCOORD;
-};
+#include "common.hlsli"
+
+float4x4 world_mtx : register(b0);
 
 PSInput main(float4 position : POSITION, float4 norm : NORMAL, float2 tex : TEXCOORD)
 {

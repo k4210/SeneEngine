@@ -55,9 +55,8 @@ struct MeshDataGPU
 {
 	D3D12_INDEX_BUFFER_VIEW index_buffer;
 	D3D12_VERTEX_BUFFER_VIEW vertex_buffer;
-	float radius;
 	uint16_t texture_idx[2];
-	//float material_value[2];
+	float material_value;
 };
 
 struct MeshInstanceGPU

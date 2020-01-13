@@ -12,8 +12,8 @@ private:
 public:
 	T& GetFirst() { return buffers_[0]; }
 	T& GetSecond() { return buffers_[1]; }
-	T& GetActiveNode() { return buffers_[active_]; }
-	const T& GetActiveNode() const { return buffers_[active_]; }
+	T& GetActive() { return buffers_[active_]; }
+	const T& GetActive() const { return buffers_[active_]; }
 	void FlipActive() { active_ = 1 - active_; }
 };
 

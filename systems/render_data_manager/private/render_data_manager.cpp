@@ -171,7 +171,7 @@ protected:
 			meshes_.Add(instance.mesh);
 			assert(instance.mesh->added_in_batch == Const::kInvalid);
 			instance.mesh->added_in_batch.store(actual_batch_ + 1);
-			waiting_meshes_.GetActiveNode().push_back(instance.mesh);
+			waiting_meshes_.GetActive().push_back(instance.mesh);
 		}
 		scene_.Add(instance);
 	}
@@ -191,7 +191,7 @@ protected:
 	{
 		const IRenderer::RendererCommon& common = IRenderer::GetRendererCommon();
 		upload_buffer_.initialize(common.device.Get(), 2 * 1024 * 1024);
-		buffers_heap_.create(common.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 8);
+		buffers_heap_.create(common.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 4);
 
 		commands_.Create(common.device.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
 
@@ -206,7 +206,7 @@ protected:
 		fence_.WaitForGPU(commands_);
 		upload_buffer_.reset();
 
-		IRenderer::EnqueueMsg({ IRenderer::RT_MSG_MeshBuffer { mesh_buffer_.get_srv_handle_gpu()} });
+		IRenderer::EnqueueMsg({ IRenderer::RT_MSG_MeshBuffer { mesh_buffer_.get_srv_handle()} });
 	}
 
 	void ThreadCleanUp() override
@@ -238,7 +238,7 @@ protected:
 				ready_to_register.clear();
 			}
 		};
-		send_loaded_meshes(waiting_meshes_.GetActiveNode());
+		send_loaded_meshes(waiting_meshes_.GetActive());
 		commands_.Reopen();
 		upload_buffer_.reset();
 		actual_batch_++;
@@ -251,7 +251,7 @@ protected:
 		if(nodes_update_requiried)
 		{
 			nodes_.FlipActive();
-			scene_.UpdateNodes(nodes_.GetActiveNode(), commands_.GetCommandList(), upload_buffer_);
+			scene_.UpdateNodes(nodes_.GetActive(), commands_.GetCommandList(), upload_buffer_);
 		}
 
 		//3. Update instances
@@ -277,8 +277,8 @@ protected:
 		{
 			std::promise<IRenderer::SyncGPU> rt_promise = fence_.MakePromiseRT();
 			IRenderer::EnqueueMsg({ IRenderer::RT_MSG_StaticBuffers {
-					nodes_.GetActiveNode().get_srv_handle_gpu(),
-					instances_buffer_.get_srv_handle_gpu(),
+					nodes_.GetActive().get_srv_handle(),
+					instances_buffer_.get_srv_handle(),
 					nodes_num, std::move(rt_promise)} });
 		}
 

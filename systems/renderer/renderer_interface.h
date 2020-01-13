@@ -25,11 +25,11 @@ namespace IRenderer
 	struct RT_MSG_UpdateCamera { DirectX::XMFLOAT3 position; DirectX::XMFLOAT3 direction; };
 	struct RT_MSG_ToogleFullScreen { std::optional<bool> forced_mode; };
 	
-	struct RT_MSG_MeshBuffer { D3D12_GPU_DESCRIPTOR_HANDLE meshes_buff; }; // update fragment
+	struct RT_MSG_MeshBuffer { DescriptorHeapElementRef meshes_buff; }; // update fragment
 	struct RT_MSG_StaticBuffers 
 	{ 
-		D3D12_GPU_DESCRIPTOR_HANDLE static_nodes;
-		D3D12_GPU_DESCRIPTOR_HANDLE static_instances;
+		DescriptorHeapElementRef static_nodes;
+		DescriptorHeapElementRef static_instances;
 		uint32_t num_nodes = 0; 
 		std::promise<SyncGPU> promise_previous_nodes_not_used;
 	};

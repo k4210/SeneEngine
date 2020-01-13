@@ -216,8 +216,19 @@
       <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_draw_vs</VariableName>
       <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_draw_vs</VariableName>
     </FxCompile>
+    <FxCompile Include="shaders\generate_draw_commands_cs.hlsl">
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.1</ShaderModel>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Release|x64'">5.1</ShaderModel>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compute</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compute</ShaderType>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">g_generate_draw_commands_cs</VariableName>
+      <VariableName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">g_generate_draw_commands_cs</VariableName>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)..\..\SceneEngine\compiled_shaders\debug\generate_draw_commands_cs.h</HeaderFileOutput>
+      <HeaderFileOutput Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)..\..\SceneEngine\compiled_shaders\release\generate_draw_commands_cs.h</HeaderFileOutput>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\common.hlsli" />
     <None Include="utils\math\Functions.inl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

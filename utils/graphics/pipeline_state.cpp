@@ -147,7 +147,7 @@ ID3D12PipelineState* GraphicsPSO::Finalize(ID3D12Device* device)
     return m_PSO;
 }
 
-void ComputePSO::Finalize(ID3D12Device* device)
+ID3D12PipelineState* ComputePSO::Finalize(ID3D12Device* device)
 {
     assert(device);
     // Make sure the root signature is finalized first
@@ -184,6 +184,7 @@ void ComputePSO::Finalize(ID3D12Device* device)
             std::this_thread::yield();
         m_PSO = *PSORef;
     }
+    return m_PSO;
 }
 
 ComputePSO::ComputePSO()

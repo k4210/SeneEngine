@@ -147,8 +147,16 @@ ID3D12RootSignature* RootSignature::Finalize(ID3D12Device* device, D3D_ROOT_SIGN
     {
         ComPtr<ID3DBlob> pOutBlob, pErrorBlob;
 
-        ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&RootDesc, version,
-            pOutBlob.GetAddressOf(), pErrorBlob.GetAddressOf()));
+        if (FAILED(D3DX12SerializeVersionedRootSignature(&RootDesc, version,
+            pOutBlob.GetAddressOf(), pErrorBlob.GetAddressOf())))
+        {
+            if (pErrorBlob)
+            {
+                printf_s("Error: [%lld] %s", pErrorBlob->GetBufferSize(), (char*)pErrorBlob->GetBufferPointer());
+            }
+            assert(false);
+            return nullptr;
+        }
 
         ThrowIfFailed( device->CreateRootSignature(1, pOutBlob->GetBufferPointer(), pOutBlob->GetBufferSize(),
             IID_PPV_ARGS(&m_Signature)) );

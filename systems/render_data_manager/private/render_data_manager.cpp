@@ -199,9 +199,11 @@ protected:
 		
 		Construct<MeshDataGPU,		StructBuffer>(mesh_buffer_,			nullptr, Const::kMeshCapacity,				common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
 		Construct<MeshInstanceGPU,	StructBuffer>(instances_buffer_,	nullptr, Const::kStaticInstancesCapacity,	common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
-		Construct<SceneNodeGPU,		StructBuffer>(nodes_.GetFirst(),	nullptr, Const::kStaticNodesCapacity,		common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
-		Construct<SceneNodeGPU,		StructBuffer>(nodes_.GetSecond(),	nullptr, Const::kStaticNodesCapacity,		common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
-
+		for (auto& n : nodes_)
+		{
+			Construct<SceneNodeGPU, StructBuffer>(n, nullptr, Const::kStaticNodesCapacity, common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
+		}
+		
 		commands_.Execute();
 		fence_.WaitForGPU(commands_);
 		upload_buffer_.reset();

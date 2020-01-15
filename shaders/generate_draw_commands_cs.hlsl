@@ -1,9 +1,13 @@
 #include "common.hlsli"
 
-uint instances_num : register(b0);
 RWStructuredBuffer<IndirectCommand> out_commands : register(u0);
 StructuredBuffer<MeshData> meshes : register(t0);
-StructuredBuffer<MeshInstance> instances : register(t1);
+StructuredBuffer<MeshInstance> instances : register(t2);
+
+cbuffer SceneManagerParams : register(b0)
+{
+	uint instances_num;
+};
 
 [numthreads(64, 1, 1)]
 void main(uint3 index3d : SV_DispatchThreadID)

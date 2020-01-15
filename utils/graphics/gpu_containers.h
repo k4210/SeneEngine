@@ -228,6 +228,30 @@ struct CommitedBuffer
 	ID3D12Resource*			get_resource()	const { return resource_.Get(); }
 };
 
+struct ConstantBuffer : protected CommitedBuffer
+{
+protected:
+	DescriptorHeapElement cbv_;
+
+public:
+	static constexpr D3D12_RESOURCE_STATES kDefaultState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+
+	using CommitedBuffer::initialize;
+	using CommitedBuffer::transition_barrier;
+	using CommitedBuffer::elements_num;
+	using CommitedBuffer::get_resource;
+	using CommitedBuffer::get_state;
+	using CommitedBuffer::size;
+
+	uint32_t						whole_buffer_size()	const	{ return (size() + 255) & ~255; }
+	void							destroy()					{ cbv_.release(); CommitedBuffer::destroy(); }
+	bool							is_ready()			const	{ return CommitedBuffer::is_ready() && cbv_; }
+	DescriptorHeapElementRef		get_cbv_handle()	const	{ return cbv_.get_ref(); }
+
+	void create_resource(ID3D12Device * device);
+	void create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap);
+};
+
 struct StructBuffer : protected CommitedBuffer
 {
 protected:
@@ -408,3 +432,38 @@ template<typename Element, typename Buffer> static bool Construct(
 	return true;
 }
 
+template<typename Element, typename Buffer> 
+static bool FillGpuContainer(Buffer& buffer,
+	const Element* elements, std::size_t elements_num, ID3D12GraphicsCommandList* command_list,
+	UploadBuffer& upload_buffer, uint32_t dst_offset = 0, 
+	std::optional<D3D12_RESOURCE_STATES> final_state = {})
+{
+	assert(elements && elements_num);
+	assert(command_list);
+	const auto local_size = sizeof(Element) * elements_num;
+	assert((local_size + dst_offset) <= buffer.size());
+
+	const auto upload_offset = upload_buffer.data_to_upload(elements, local_size, alignof(Element));
+	if (!upload_offset.has_value())
+		return false;
+
+	const D3D12_RESOURCE_STATES initial_state = buffer.get_state();
+	const bool good_dest_state = (initial_state == D3D12_RESOURCE_STATE_COMMON)
+		|| !!(initial_state & D3D12_RESOURCE_STATE_COPY_DEST);
+	if (!good_dest_state)
+	{
+		D3D12_RESOURCE_BARRIER barriers[] = { buffer.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST) };
+		command_list->ResourceBarrier(_countof(barriers), barriers);
+	}
+
+	command_list->CopyBufferRegion(buffer.get_resource(), dst_offset, upload_buffer.get_resource()
+		, upload_offset.value(), local_size);
+
+	const D3D12_RESOURCE_STATES new_state = final_state.value_or(initial_state);
+	if (new_state != buffer.get_state())
+	{
+		D3D12_RESOURCE_BARRIER barriers[] = { buffer.transition_barrier(new_state) };
+		command_list->ResourceBarrier(_countof(barriers), barriers);
+	}
+	return true;
+}

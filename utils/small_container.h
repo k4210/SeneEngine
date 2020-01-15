@@ -10,11 +10,17 @@ private:
 	uint32_t active_ = 0;
 
 public:
-	T& GetFirst() { return buffers_[0]; }
-	T& GetSecond() { return buffers_[1]; }
-	T& GetActive() { return buffers_[active_]; }
-	const T& GetActive() const { return buffers_[active_]; }
-	void FlipActive() { active_ = 1 - active_; }
+			void	FlipActive()			{ active_ = 1 - active_; }
+
+			T&		GetActive()				{ return buffers_[active_]; }
+	const	T&		GetActive()		const	{ return buffers_[active_]; }
+			T&		GetInactive()			{ return buffers_[1 - active_]; }
+	const	T&		GetInactive()	const	{ return buffers_[1 - active_]; }
+
+	const	auto	begin()			const	{ return buffers_.begin(); }
+			auto	begin()					{ return buffers_.begin(); }
+	const	auto	end()			const	{ return buffers_.end(); }
+			auto	end()					{ return buffers_.end(); }
 };
 
 template<typename T> void RemoveSwap(std::vector<T>& vec, std::size_t idx)

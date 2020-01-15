@@ -52,7 +52,7 @@ struct BoundingSphere
 	float Radius;
 };
 
-struct SceneNodeGPU
+struct SceneNode
 {
 	BoundingSphere bounding_sphere;
 	uint instances; //start:24; size : 8;

@@ -152,6 +152,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="systems\data_source\private\data_source.cpp" />
     <ClCompile Include="systems\gameplay\private\gameplay.cpp" />
+    <ClCompile Include="systems\renderer\private\base_renderer.cpp" />
     <ClCompile Include="systems\renderer\private\renderer.cpp" />
     <ClCompile Include="systems\render_data_manager\private\render_data_manager.cpp" />
     <ClCompile Include="systems\scene_manager\private\scene_manager.cpp" />
@@ -168,6 +169,7 @@
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="systems\data_source\data_source_interface.h" />
     <ClInclude Include="systems\gameplay\gameplay_interface.h" />
+    <ClInclude Include="systems\renderer\private\base_renderer.h" />
     <ClInclude Include="systems\renderer\renderer_interface.h" />
     <ClInclude Include="systems\render_data_manager\private\mesh_manager.h" />
     <ClInclude Include="systems\render_data_manager\private\rdm_base.h" />

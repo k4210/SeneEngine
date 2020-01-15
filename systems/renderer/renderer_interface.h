@@ -45,36 +45,7 @@ namespace IRenderer
 
 	struct RendererCommon
 	{
-		ComPtr<IDXGISwapChain3> swap_chain;
 		ComPtr<ID3D12Device> device;
-		ComPtr<ID3D12CommandQueue> direct_command_queue;
-
-		BOOL tearing_supported = false;
-		uint32_t width = 1280;
-		uint32_t height = 720;
-		HWND hwnd = nullptr;
-
-		D3D12_FEATURE_DATA_ROOT_SIGNATURE feature_data = { D3D_ROOT_SIGNATURE_VERSION_1 };
-
-		RECT window_rect = { 0, 0, 1280, 720 };
-		bool fullscreen = false;
-
-		uint32_t frame_index = 0;
-		HANDLE fence_event = 0;
-		ComPtr<ID3D12Fence> fence;
-		uint64_t fence_values[Const::kFrameCount] = { 0 };
-
-		CD3DX12_VIEWPORT viewport;
-		CD3DX12_RECT scissor_rect;
-		ComPtr<ID3D12Resource> render_targets[Const::kFrameCount];
-		ComPtr<ID3D12Resource> depth_stencil;
-
-		ComPtr<ID3D12CommandAllocator> command_allocators[Const::kFrameCount];
-		ComPtr<ID3D12DescriptorHeap> rtv_heap;
-		ComPtr<ID3D12DescriptorHeap> dsv_heap;
-		
-		uint32_t rtv_descriptor_size = 0;
-		uint32_t dsv_descriptor_size = 0;
 	};
 
 	const RendererCommon& GetRendererCommon();

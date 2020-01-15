@@ -70,6 +70,31 @@ void CommitedBuffer::create_resource(ID3D12Device* device)
 		, D3D12_HEAP_FLAG_NONE, &desc, state_, nullptr, IID_PPV_ARGS(&resource_)));
 }
 
+void ConstantBuffer::create_resource(ID3D12Device* device)
+{
+	assert(device);
+	assert(element_size_);
+	assert(elements_num_);
+
+	const D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(whole_buffer_size());
+	const CD3DX12_HEAP_PROPERTIES heap_prop(D3D12_HEAP_TYPE_DEFAULT);
+	ThrowIfFailed(device->CreateCommittedResource(&heap_prop
+		, D3D12_HEAP_FLAG_NONE, &desc, state_, nullptr, IID_PPV_ARGS(&resource_)));
+}
+
+void ConstantBuffer::create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap)
+{
+	assert(descriptor_heap);
+	assert(resource_);
+	assert(device);
+	const bool ok = cbv_.initialize(*descriptor_heap);
+	assert(ok);
+	D3D12_CONSTANT_BUFFER_VIEW_DESC desc = {};
+	desc.BufferLocation = resource_->GetGPUVirtualAddress();
+	desc.SizeInBytes = whole_buffer_size();
+	device->CreateConstantBufferView(&desc, cbv_.get_cpu_handle());
+}
+
 void StructBuffer::create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap)
 {
 	assert(descriptor_heap);
@@ -143,6 +168,7 @@ std::optional< uint64_t> UploadBuffer::data_to_upload(
 	const void* src_data, std::size_t size, std::size_t alignment)
 {
 	auto reserved_mem = reserve_space(size, alignment);
+	assert(reserved_mem);
 	if (!reserved_mem)
 		return {};
 	auto [offset, dst_ptr] = *reserved_mem;

@@ -184,11 +184,6 @@ public:
 	T* safe_get_data() { return reinterpret_cast<T*>(&data_[0]); }
 	const T* safe_get_data() const { return reinterpret_cast<const T*>(&data_[0]); }
 
-	std::size_t get_num() const 
-	{
-		return free_.
-	}
-
 	template<typename ...Args> T* allocate(Args&&... args)
 	{
 		const auto idx = free_.find_first();

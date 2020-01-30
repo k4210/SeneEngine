@@ -26,7 +26,7 @@ uint32_t DescriptorHeap::allocate()
 		*found = true;
 		return static_cast<uint32_t>(std::distance(taken_slots_.begin(), found));
 	}
-	return Const::kInvalid;
+	return Const::kInvalid32;
 }
 
 void DescriptorHeap::free(uint32_t idx)
@@ -114,19 +114,34 @@ void StructBuffer::create_views(ID3D12Device* device, DescriptorHeap* descriptor
 
 void UavCountedBuffer::create_views(ID3D12Device* device, DescriptorHeap* descriptor_heap)
 {
-	assert(descriptor_heap);
-	assert(resource_);
-	const bool ok = uav_.initialize(*descriptor_heap);
-	assert(ok);
-	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
-	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-	uavDesc.Buffer.FirstElement = 0;
-	uavDesc.Buffer.NumElements = elements_num_;
-	uavDesc.Buffer.StructureByteStride = element_size_;
-	uavDesc.Buffer.CounterOffsetInBytes = counter_offset_bytes_;
-	uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-	device->CreateUnorderedAccessView(resource_.Get(), resource_.Get(), &uavDesc, uav_.get_cpu_handle());
+	StructBuffer::create_views(device, descriptor_heap);
+	{
+		const bool ok = uav_.initialize(*descriptor_heap);
+		assert(ok);
+		D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {};
+		desc.Format = DXGI_FORMAT_UNKNOWN;
+		desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+		desc.Buffer.FirstElement = 0;
+		desc.Buffer.NumElements = elements_num_;
+		desc.Buffer.StructureByteStride = element_size_;
+		desc.Buffer.CounterOffsetInBytes = counter_offset_bytes_;
+		desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+		device->CreateUnorderedAccessView(resource_.Get(), resource_.Get(), &desc, uav_.get_cpu_handle());
+	}
+	{
+		const bool ok = counter_.initialize(*descriptor_heap);
+		assert(ok);
+		D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+		desc.Format = DXGI_FORMAT_UNKNOWN;
+		desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		desc.Buffer.NumElements = 1;
+		desc.Buffer.StructureByteStride = sizeof(uint32_t);
+		desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+		assert(!(counter_offset_bytes_ & (sizeof(uint32_t) - 1)));
+		desc.Buffer.FirstElement = counter_offset_bytes_ / sizeof(uint32_t);
+		device->CreateShaderResourceView(resource_.Get(), &desc, counter_.get_cpu_handle());
+	}
 }
 
 uint64_t UploadBuffer::align(uint64_t uLocation, uint64_t uAlign)

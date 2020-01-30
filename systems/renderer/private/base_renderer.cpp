@@ -27,7 +27,11 @@ BaseRenderer::BaseRenderer(HWND hWnd, uint32_t width, uint32_t height)
 	scissor_rect_ = CD3DX12_RECT(0, 0, static_cast<LONG>(width), static_cast<LONG>(height));
 }
 
-BaseRenderer::~BaseRenderer() { assert(renderer_inst); renderer_inst = nullptr; }
+BaseRenderer::~BaseRenderer() 
+{ 
+	assert(renderer_inst); 
+	renderer_inst = nullptr; 
+}
 
 void BaseRenderer::GetHardwareAdapter(IDXGIFactory2* pFactory, IDXGIAdapter1** ppAdapter)
 {
@@ -169,13 +173,9 @@ SyncGPU BaseRenderer::PrevFrameSync()
 	return { fence_, current_frame_num - 1 };
 }
 
-void BaseRenderer::BeforeCommonDraw(ID3D12GraphicsCommandList* command_list)
+void BaseRenderer::PrepareCommonDraw(ID3D12GraphicsCommandList* command_list)
 {
 	assert(command_list);
-	D3D12_RESOURCE_BARRIER barriers[] = { CD3DX12_RESOURCE_BARRIER::Transition(render_targets_[frame_index_].Get()
-		, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET) };
-	command_list->ResourceBarrier(_countof(barriers), barriers);
-
 	command_list->RSSetViewports(1, &viewport_);
 	command_list->RSSetScissorRects(1, &scissor_rect_);
 
@@ -187,14 +187,6 @@ void BaseRenderer::BeforeCommonDraw(ID3D12GraphicsCommandList* command_list)
 	command_list->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 	command_list->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 	command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-}
-
-void BaseRenderer::AfterCommonDraw(ID3D12GraphicsCommandList* command_list)
-{
-	assert(command_list);
-	D3D12_RESOURCE_BARRIER barriers[] = { CD3DX12_RESOURCE_BARRIER::Transition(render_targets_[frame_index_].Get()
-		, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT) };
-	command_list->ResourceBarrier(_countof(barriers), barriers);
 }
 
 ID3D12CommandAllocator* BaseRenderer::GetActiveAllocator()

@@ -1,20 +1,32 @@
 #include "common.hlsli"
-#include "common_scene.hlsli"
 
 RWStructuredBuffer<IndirectCommand> out_commands		: register(u0);
+RWStructuredBuffer<uint>			out_temp_1			: register(u1);	//16 bits!
+RWStructuredBuffer<uint>			out_temp_2			: register(u2);	//16 bits!
 
-StructuredBuffer<uint>				counter				: register(t4);
-StructuredBuffer<uint>				in_inst_idx			: register(t5);
+StructuredBuffer<MeshData>			meshes				: register(t0);
+StructuredBuffer<BoundingSphere>	nodes				: register(t1);
+StructuredBuffer<uint>				instances_in_node	: register(t2); //16 bits!
+StructuredBuffer<MeshInstance>		instances			: register(t3);
+
+StructuredBuffer<uint>				temp_1				: register(t4); //16 bits!
+StructuredBuffer<uint>				temp_1_counter		: register(t5);
+StructuredBuffer<uint>				temp_2				: register(t6);	//16 bits!
+StructuredBuffer<uint>				temp_2_counter		: register(t7);
+
+cbuffer SceneManagerParams : register(b0)
+{
+	uint instances_num;
+};
 
 [numthreads(64, 1, 1)]
 void main(uint3 index3d : SV_DispatchThreadID)
 {
 	const uint index = index3d.x;
-	if (index >= counter[0])
+	if (index >= instances_num)
 		return;
 
-	const uint inst_idx = in_inst_idx[index];
-	const MeshInstance instance = instances[inst_idx];
+	const MeshInstance instance = instances[index];
 	const uint mesh_idx = GetFirst(instance.mesh_index_and_max_distance);
 	const MeshData mesh = meshes[mesh_idx];
 	IndirectCommand command;

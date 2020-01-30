@@ -147,7 +147,12 @@ protected:
 	
 	StructBuffer mesh_buffer_;
 	StructBuffer instances_buffer_;
-	Twins<StructBuffer> nodes_;
+	struct NodesBuffers
+	{
+		StructBuffer bounding_sphere;
+		StructBuffer instances_per_node;
+	};
+	Twins<NodesBuffers> nodes_;
 
 	std::atomic_uint32_t actual_batch_ = 0;
 
@@ -166,10 +171,10 @@ protected:
 		assert(msg.component);
 		MeshComponent& instance = *msg.component;
 		assert(instance.mesh);
-		if (instance.mesh->index == Const::kInvalid)
+		if (instance.mesh->index == Const::kInvalid32)
 		{
 			meshes_.Add(instance.mesh);
-			assert(instance.mesh->added_in_batch == Const::kInvalid);
+			assert(instance.mesh->added_in_batch == Const::kInvalid32);
 			instance.mesh->added_in_batch.store(actual_batch_ + 1);
 			waiting_meshes_.GetActive().push_back(instance.mesh);
 		}
@@ -191,17 +196,18 @@ protected:
 	{
 		const IRenderer::RendererCommon& common = IRenderer::GetRendererCommon();
 		upload_buffer_.initialize(common.device.Get(), 2 * 1024 * 1024);
-		buffers_heap_.create(common.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 4);
+		buffers_heap_.create(common.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 6);
 
 		commands_.Create(common.device.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
 
 		fence_.Create(common.device.Get());
 		
-		Construct<MeshDataGPU,		StructBuffer>(mesh_buffer_,			nullptr, Const::kMeshCapacity,				common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
-		Construct<MeshInstanceGPU,	StructBuffer>(instances_buffer_,	nullptr, Const::kStaticInstancesCapacity,	common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
+		Construct<MeshDataGPU,		StructBuffer>(mesh_buffer_,							nullptr, Const::kMeshCapacity,				common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
+		Construct<MeshInstanceGPU,	StructBuffer>(instances_buffer_,					nullptr, Const::kStaticInstancesCapacity,	common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
 		for (auto& n : nodes_)
 		{
-			Construct<SceneNodeGPU, StructBuffer>(n, nullptr, Const::kStaticNodesCapacity, common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
+			Construct<BoundingSphere,				StructBuffer>(n.bounding_sphere,	nullptr, Const::kStaticNodesCapacity,		common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
+			Construct<InstancesInNodeGPU::TIndex,	StructBuffer>(n.instances_per_node, nullptr, Const::kStaticInstancesCapacity,	common.device.Get(), commands_.GetCommandList(), upload_buffer_, &buffers_heap_, { D3D12_RESOURCE_STATE_COMMON });
 		}
 		
 		commands_.Execute();
@@ -253,7 +259,8 @@ protected:
 		if(nodes_update_requiried)
 		{
 			nodes_.FlipActive();
-			scene_.UpdateNodes(nodes_.GetActive(), commands_.GetCommandList(), upload_buffer_);
+			scene_.UpdateNodes(nodes_.GetActive().bounding_sphere, commands_.GetCommandList(), upload_buffer_);
+			scene_.UpdateInstancesInNodes(nodes_.GetActive().instances_per_node, commands_.GetCommandList(), upload_buffer_);
 		}
 
 		//3. Update instances
@@ -279,8 +286,9 @@ protected:
 		{
 			std::promise<IRenderer::SyncGPU> rt_promise = fence_.MakePromiseRT();
 			IRenderer::EnqueueMsg({ IRenderer::RT_MSG_StaticBuffers {
-					nodes_.GetActive().get_srv_handle(),
+					nodes_.GetActive().bounding_sphere.get_srv_handle(),
 					instances_buffer_.get_srv_handle(),
+					nodes_.GetActive().instances_per_node.get_srv_handle(),
 					nodes_num, std::move(rt_promise)} });
 		}
 
@@ -353,5 +361,5 @@ uint32_t MeshHandle::ActualBatch()
 bool MeshHandle::IsMeshLoaded(Mesh& mesh)
 {
 	const uint32_t mesh_batch = mesh.added_in_batch;
-	return (mesh_batch != Const::kInvalid) && (mesh_batch < ActualBatch());
+	return (mesh_batch != Const::kInvalid32) && (mesh_batch < ActualBatch());
 }

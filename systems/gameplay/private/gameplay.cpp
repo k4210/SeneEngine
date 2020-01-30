@@ -28,7 +28,6 @@ public:
 protected:
 	Entity triangle_instance_;
 	
-
 	void operator()(GP_MSG_MeshLoaded) {}
 	void operator()(GP_MSG_MaterialLoaded) {}
 
@@ -38,14 +37,16 @@ protected:
 	{
 		std::shared_ptr<Mesh> triangle_mesh_ = std::make_shared<Mesh>();
 		{
-			MeshData data;
-			data.indices = { 0, 1, 2 };
-			data.vertexes = {
+			std::unique_ptr<MeshDataCPU> data = std::make_unique<MeshDataCPU>();
+			data->lod[0].indices = { 0, 1, 2 };
+			data->lod[0].vertexes = {
 					{ { 0.0f, 0.25f, 0.0f    }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} },
 					{ { 0.25f, -0.25f, 0.0f  }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} },
 					{ { -0.25f, -0.25f, 0.0f }, { 0.0f, 0.0f, 0.0f}, { 0.0f, 0.0f} } };
-			triangle_mesh_->mesh_data = { std::move(data) };
+			triangle_mesh_->mesh_data = std::move(data);
 			triangle_mesh_->radius = 0.4f;
+			triangle_mesh_->additional_lod_num = 0;
+			triangle_mesh_->max_distance[0] = -1;
 		}
 		Transform transfrom;
 		triangle_instance_.mesh.Initialize(std::move(triangle_mesh_), std::move(transfrom));

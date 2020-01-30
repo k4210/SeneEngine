@@ -2,13 +2,15 @@
 
 #include "d3dx12.h"
 #include <wrl.h>
+#include <unordered_map>
 #include "../base_app_helper.h"
 
 using Microsoft::WRL::ComPtr;
 
 namespace Const
 {
-	constexpr uint32_t kInvalid = 0xFFFFFFFF;
+	constexpr uint16_t kInvalid16 = 0xFFFF;
+	constexpr uint32_t kInvalid32 = 0xFFFFFFFF;
 	constexpr uint64_t kInvalid64 = 0xFFFFFFFFFFFFFFFF;
 }
 
@@ -65,41 +67,41 @@ struct DescriptorHeapElementRef
 {
 protected:
 	DescriptorHeap* descriptor_heap_ = nullptr;
-	uint32_t idx_ = Const::kInvalid;
+	uint32_t idx_ = Const::kInvalid32;
 public:
 	CD3DX12_CPU_DESCRIPTOR_HANDLE get_cpu_handle() const
 	{
-		assert(descriptor_heap_ && (idx_ != Const::kInvalid));
+		assert(descriptor_heap_ && (idx_ != Const::kInvalid32));
 		return descriptor_heap_->get_cpu_handle(idx_);
 	}
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE get_gpu_handle() const
 	{
-		assert(descriptor_heap_ && (idx_ != Const::kInvalid));
+		assert(descriptor_heap_ && (idx_ != Const::kInvalid32));
 		return descriptor_heap_->get_gpu_handle(idx_);
 	}
 
 	void release()
 	{
-		if (descriptor_heap_ && idx_ != Const::kInvalid)
+		if (descriptor_heap_ && idx_ != Const::kInvalid32)
 		{
 			descriptor_heap_->free(idx_);
 		}
 		descriptor_heap_ = nullptr;
-		idx_ = Const::kInvalid;
+		idx_ = Const::kInvalid32;
 	}
 
 	void clear_no_release()
 	{
 		descriptor_heap_ = nullptr;
-		idx_ = Const::kInvalid;
+		idx_ = Const::kInvalid32;
 	}
 
 	bool initialize(DescriptorHeap& desc_heap)
 	{
-		assert(!descriptor_heap_ && (idx_ == Const::kInvalid));
+		assert(!descriptor_heap_ && (idx_ == Const::kInvalid32));
 		const auto new_idx = desc_heap.allocate();
-		if (new_idx == Const::kInvalid)
+		if (new_idx == Const::kInvalid32)
 			return false;
 		descriptor_heap_ = &desc_heap;
 		idx_ = new_idx;
@@ -108,14 +110,14 @@ public:
 
 	void initialize(DescriptorHeap& desc_heap, uint32_t already_allocaded_idx)
 	{
-		assert(already_allocaded_idx != Const::kInvalid);
-		assert(!descriptor_heap_ && (idx_ == Const::kInvalid));
+		assert(already_allocaded_idx != Const::kInvalid32);
+		assert(!descriptor_heap_ && (idx_ == Const::kInvalid32));
 		descriptor_heap_ = &desc_heap;
 		idx_ = already_allocaded_idx;
 		assert(desc_heap.is_set(idx_));
 	}
 
-	operator bool() const { return descriptor_heap_ && (idx_ != Const::kInvalid); }
+	operator bool() const { return descriptor_heap_ && (idx_ != Const::kInvalid32); }
 
 	uint32_t get_index() const { return idx_; }
 
@@ -130,30 +132,18 @@ struct DescriptorHeapElement : public DescriptorHeapElementRef
 	DescriptorHeapElement(const DescriptorHeapElement&) = delete;
 	DescriptorHeapElement& operator=(const DescriptorHeapElement&) = delete;
 	DescriptorHeapElement(DescriptorHeapElement&& other) = default;
-	/*
-	DescriptorHeapElement(DescriptorHeapElement&& other)
-	{
-		descriptor_heap_ = other.descriptor_heap_;
-		idx_ = other.idx_;
-		other.descriptor_heap_ = nullptr;
-		other.idx_ = Const::kInvalid;
-	}
-	DescriptorHeapElement& operator=(DescriptorHeapElement&& other)
-	{
-		std::swap(descriptor_heap_, other.descriptor_heap_);
-		std::swap(idx_, other.idx_);
-	}*/
+
 	~DescriptorHeapElement() { release(); }
 
 	DescriptorHeapElementRef get_ref() const { return *this; }
 };
 
-inline DescriptorHeapElementRef CopyDescriptor(ID3D12Device* device, DescriptorHeap& dst, const DescriptorHeapElementRef& src, uint32_t dst_idx = Const::kInvalid)
+inline DescriptorHeapElementRef CopyDescriptor(ID3D12Device* device, DescriptorHeap& dst, const DescriptorHeapElementRef& src, uint32_t dst_idx = Const::kInvalid32)
 {
 	assert(src);
 	assert(device);
 	DescriptorHeapElementRef result;
-	if (dst_idx == Const::kInvalid)
+	if (dst_idx == Const::kInvalid32)
 	{
 		const bool allocated = result.initialize(dst);
 		assert(allocated);
@@ -335,8 +325,9 @@ struct IndexBuffer32 : protected CommitedBuffer
 struct UavCountedBuffer : protected StructBuffer
 {
 protected:
-	uint64_t counter_offset_bytes_ = Const::kInvalid;
+	uint64_t counter_offset_bytes_ = Const::kInvalid32;
 	DescriptorHeapElement uav_;
+	DescriptorHeapElement counter_;
 
 	static inline uint64_t align_for_uav_counter(uint64_t buffer_size)
 	{
@@ -360,12 +351,17 @@ public:
 	{
 		counter_offset_bytes_ = Const::kInvalid64;
 		uav_.release();
+		counter_.release();
 		StructBuffer::destroy();
 	}
 	void							create_resource(ID3D12Device* device)
 	{
+		assert(device);
+		assert(element_size_);
+		assert(elements_num_);
+
 		counter_offset_bytes_ = align_for_uav_counter(size());
-		const D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(counter_offset_bytes_ + sizeof(uint32_t), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+		D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(counter_offset_bytes_ + sizeof(uint32_t), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 		const CD3DX12_HEAP_PROPERTIES heap_prop(D3D12_HEAP_TYPE_DEFAULT);
 		ThrowIfFailed(device->CreateCommittedResource(&heap_prop, D3D12_HEAP_FLAG_NONE, &desc, state_, nullptr, IID_PPV_ARGS(&resource_)));
 	}
@@ -373,9 +369,11 @@ public:
 
 	DescriptorHeapElementRef		get_uav_handle()		const { return uav_.get_ref(); }
 	uint64_t						get_counter_offset()	const { return counter_offset_bytes_; }
+	DescriptorHeapElementRef		get_counter_srv_handle()const { return counter_; }
 
 	void reset_counter(ID3D12GraphicsCommandList* command_list, ID3D12Resource* src_resource, uint64_t src_offset)
 	{
+		assert((get_state() == D3D12_RESOURCE_STATE_COMMON) || !!(get_state() & D3D12_RESOURCE_STATE_COPY_DEST));
 		assert(command_list && src_resource);
 		command_list->CopyBufferRegion(resource_.Get(), counter_offset_bytes_, src_resource, src_offset, sizeof(uint32_t));
 	}
@@ -447,23 +445,125 @@ static bool FillGpuContainer(Buffer& buffer,
 	if (!upload_offset.has_value())
 		return false;
 
-	const D3D12_RESOURCE_STATES initial_state = buffer.get_state();
-	const bool good_dest_state = (initial_state == D3D12_RESOURCE_STATE_COMMON)
-		|| !!(initial_state & D3D12_RESOURCE_STATE_COPY_DEST);
-	if (!good_dest_state)
-	{
-		D3D12_RESOURCE_BARRIER barriers[] = { buffer.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST) };
-		command_list->ResourceBarrier(_countof(barriers), barriers);
-	}
-
+	assert((buffer.get_state() == D3D12_RESOURCE_STATE_COMMON) || !!(buffer.get_state() & D3D12_RESOURCE_STATE_COPY_DEST));
 	command_list->CopyBufferRegion(buffer.get_resource(), dst_offset, upload_buffer.get_resource()
 		, upload_offset.value(), local_size);
-
-	const D3D12_RESOURCE_STATES new_state = final_state.value_or(initial_state);
-	if (new_state != buffer.get_state())
-	{
-		D3D12_RESOURCE_BARRIER barriers[] = { buffer.transition_barrier(new_state) };
-		command_list->ResourceBarrier(_countof(barriers), barriers);
-	}
 	return true;
 }
+
+struct TransitionManager
+{
+private:
+	ComPtr<ID3D12GraphicsCommandList> command_list_;
+	std::vector<D3D12_RESOURCE_BARRIER> pending_;
+	std::unordered_map<ID3D12Resource*, D3D12_RESOURCE_BARRIER> started_;
+
+	static ID3D12Resource* get_resource(const D3D12_RESOURCE_BARRIER& b) { return b.Transition.pResource; }
+
+	template<typename... TTail>
+	void move_to_pending(ID3D12Resource* resource, TTail... tail)
+	{
+		auto found_it = started_.find(resource);
+		if (found_it != started_.end())
+		{
+			pending_.push_back(std::move(found_it->second));
+			started_.erase(found_it);
+		}
+		if constexpr (0 != sizeof...(TTail))
+		{
+			move_to_pending(tail...);
+		}
+	}
+
+	template<typename... TTail>
+	void move_to_pending(const D3D12_RESOURCE_BARRIER& barrier, TTail... tail)
+	{
+		assert(started_.find(get_resource(barrier)) == started_.end());
+		assert(barrier.Flags == D3D12_RESOURCE_BARRIER_FLAG_NONE);
+		pending_.push_back(barrier);
+		if constexpr (0 != sizeof...(TTail))
+		{
+			move_to_pending(tail...);
+		}
+	}
+
+	void execute_pending(uint64_t begin_only_num)
+	{
+		if (!pending_.size())
+			return;
+
+		assert(command_list_);
+		command_list_->ResourceBarrier(static_cast<uint32_t>(pending_.size()), &pending_[0]);
+
+		assert(begin_only_num <= pending_.size());
+		for (uint32_t it = 0; it < begin_only_num; it++)
+		{
+			auto& b = pending_[it];
+			ID3D12Resource* res = get_resource(b);
+			assert(b.Flags == D3D12_RESOURCE_BARRIER_FLAG_BEGIN_ONLY);
+			b.Flags = D3D12_RESOURCE_BARRIER_FLAG_END_ONLY;
+			started_.insert_or_assign(std::move(res), std::move(b));
+		}
+		pending_.clear();
+	}
+
+public:
+	~TransitionManager()
+	{
+		assert(!pending_.size());
+		assert(!started_.size());
+	}
+
+	void set_command_list(ComPtr<ID3D12GraphicsCommandList> command_list)
+	{
+		command_list_ = command_list;
+	}
+
+	void clear()
+	{
+		pending_.clear();
+		started_.clear();
+	}
+
+	void insert(D3D12_RESOURCE_BARRIER&& in_barrier)
+	{
+		auto same_resource = [resource = get_resource(in_barrier)](const D3D12_RESOURCE_BARRIER& b)
+			{ return resource == get_resource(b); };
+		assert(std::find_if(pending_.begin(), pending_.end(), same_resource) == pending_.end());
+		assert(started_.find(get_resource(in_barrier)) == started_.end());
+		pending_.push_back(in_barrier);
+		auto& barrier = pending_.back();
+		assert(barrier.Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION);
+		assert(barrier.Flags == D3D12_RESOURCE_BARRIER_FLAG_NONE || barrier.Flags == D3D12_RESOURCE_BARRIER_FLAG_BEGIN_ONLY);
+		barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_BEGIN_ONLY;	
+	}
+
+	void start()
+	{
+		const auto begin_only_num = pending_.size();
+		execute_pending(begin_only_num);
+	}
+
+	template<typename... TTail>
+	void wait_for(TTail... tail)
+	{
+		const auto begin_only_num = pending_.size();
+		pending_.reserve(begin_only_num + sizeof...(TTail));
+		move_to_pending(tail...);
+		execute_pending(begin_only_num);
+	}
+
+	void wait_for_all_started()
+	{
+		const auto begin_only_num = pending_.size();
+
+		pending_.reserve(begin_only_num + started_.size());
+		for (auto iter = started_.begin(); iter != started_.end(); ++iter)
+		{
+			pending_.push_back(std::move(iter->second));
+		}
+		started_.clear();
+
+		execute_pending(begin_only_num);
+	}
+};

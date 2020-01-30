@@ -2,6 +2,8 @@
 #include "../render_data_manager_interface.h"
 #include "systems/renderer/renderer_interface.h"
 
+class SceneManager;
+
 namespace IRenderDataManager
 {
 	struct MeshComponent
@@ -9,13 +11,19 @@ namespace IRenderDataManager
 		std::shared_ptr<Mesh> mesh;
 		Transform transform;
 
-		uint32_t node_idx = Const::kInvalid;
-		uint32_t instance_idx = Const::kInvalid;
+	private:
+		friend SceneManager;
+
+		uint32_t node_idx = Const::kInvalid32;
+
+	public:
+		MeshComponent(std::shared_ptr<Mesh> in_mesh, Transform in_transform)
+			: mesh(in_mesh), transform(in_transform)
+		{}
 
 		bool is_sync_gpu() const
 		{
-			assert((node_idx == Const::kInvalid) == (instance_idx == Const::kInvalid));
-			return node_idx != Const::kInvalid;
+			return node_idx != Const::kInvalid32;
 		}
 
 		BoundingSphere get_bounding_sphere() const
@@ -23,10 +31,6 @@ namespace IRenderDataManager
 			assert(mesh);
 			return BoundingSphere(transform.translate, transform.scale * mesh->radius);
 		}
-
-		MeshComponent(std::shared_ptr<Mesh> in_mesh, Transform in_transform)
-			: mesh(in_mesh), transform(in_transform)
-		{}
 	};
 }
 using namespace IRenderDataManager;

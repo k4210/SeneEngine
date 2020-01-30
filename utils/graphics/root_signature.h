@@ -162,7 +162,7 @@ public:
     void InitStaticSampler( UINT Register, const D3D12_SAMPLER_DESC& NonStaticSamplerDesc,
         D3D12_SHADER_VISIBILITY Visibility = D3D12_SHADER_VISIBILITY_ALL );
 
-    ID3D12RootSignature* RootSignature::Finalize(ID3D12Device* device, D3D_ROOT_SIGNATURE_VERSION version, D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_NONE);
+    ID3D12RootSignature* Finalize(ID3D12Device* device, D3D_ROOT_SIGNATURE_VERSION version, D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
     ID3D12RootSignature* GetSignature() const { return m_Signature; }
 

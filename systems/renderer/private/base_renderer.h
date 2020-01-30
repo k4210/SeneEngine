@@ -55,9 +55,12 @@ protected:
 
 	SyncGPU PrevFrameSync();
 
-	void BeforeCommonDraw(ID3D12GraphicsCommandList* command_list);
+	ID3D12Resource* GetRTResource() const
+	{
+		return render_targets_[frame_index_].Get();
+	}
 
-	void AfterCommonDraw(ID3D12GraphicsCommandList* command_list);
+	void PrepareCommonDraw(ID3D12GraphicsCommandList* command_list);
 
 	ID3D12CommandAllocator* GetActiveAllocator();
 

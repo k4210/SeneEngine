@@ -118,7 +118,7 @@ public:
 			do
 			{
 				assert(prev_state.count > 0 || !prev_state.head || 1 == prev_state.num_blocks);
-				if (!prev_state.first && (prev_state.count > 0 || !prev_state.head))
+				if (!prev_state.first && (prev_state.count > 0 || !prev_state.head))//unlikely
 				{
 					if (!new_block)
 					{
@@ -127,7 +127,7 @@ public:
 					}
 					new_block->next = prev_state.head;
 				}
-				else if(new_block)
+				else if(new_block)//unlikely
 				{
 					new_block->next = nullptr;
 					MoveToFreeList(new_block);
@@ -156,16 +156,16 @@ public:
 #endif
 	}
 
-	std::optional<T> Pop()
+	std::optional<T> Pop() //This must be always called from the same thread
 	{
 		State prev_state = state_;
+		if (!prev_state.count) 
+			return {};
 		{
 			State next_state;
 			do
 			{
-				if (!prev_state.count)
-					return {};
-				const uint16_t new_count = prev_state.count - 1;
+				const uint16_t new_count = prev_state.count - 1; //we re in the consumer thread, and we already check if not empty
 				next_state = { prev_state.head, prev_state.first, new_count 
 #ifndef NDEBUG
 					, prev_state.num_blocks
@@ -198,7 +198,7 @@ public:
 		assert(block);
 		assert(index_in_block < kSize);
 		while (!block->written[index_in_block]) {} //wait for producer to finish writing. TODO: make it atomic_wait
-		std::optional<T> result(std::move(block->data[index_in_block]));
+		std::optional<T> result(std::move(block->data[index_in_block])); //Add api to call a lambda here, to avoid moving ?
 		
 #ifdef NDEBUG
 		block->written[index_in_block] = false;

@@ -33,8 +33,10 @@ protected:
 	virtual void Tick() {}
 	virtual void ThreadInitialize() {}
 	virtual void ThreadCleanUp() {}
+	//Executed on main thread
 	virtual void CustomOpen() {}
 	virtual void CustomClose() {}
+
 	void Destroy() override {}
 	virtual Microsecond GetMessageBudget() const { return Microsecond{ 7000 }; }
 

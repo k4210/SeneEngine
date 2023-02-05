@@ -5,7 +5,6 @@
 #include "systems/renderer/renderer_interface.h"
 #include "systems/render_data_manager/render_data_manager_interface.h"
 #include "systems/data_source/data_source_interface.h"
-#include "systems/scene_manager/scene_manager_interface.h"
 #include "systems/gameplay/gameplay_interface.h"
 
 int run_application(BaseApp& pSample, UINT width, UINT height);

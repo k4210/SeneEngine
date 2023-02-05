@@ -5,13 +5,13 @@ static BaseRenderer* renderer_inst = nullptr;
 
 const RendererCommon& BaseRenderer::GetCommon()
 {
-	assert(renderer_inst); 
+	assert(renderer_inst);
 	return renderer_inst->common_;
 }
 
 void BaseRenderer::StaticEnqueueMsg(RT_MSG&& msg)
 {
-	assert(renderer_inst); 
+	assert(renderer_inst);
 	renderer_inst->EnqueueMsg(std::forward<RT_MSG>(msg));
 }
 
@@ -27,10 +27,10 @@ BaseRenderer::BaseRenderer(HWND hWnd, uint32_t width, uint32_t height)
 	scissor_rect_ = CD3DX12_RECT(0, 0, static_cast<LONG>(width), static_cast<LONG>(height));
 }
 
-BaseRenderer::~BaseRenderer() 
-{ 
-	assert(renderer_inst); 
-	renderer_inst = nullptr; 
+BaseRenderer::~BaseRenderer()
+{
+	assert(renderer_inst);
+	renderer_inst = nullptr;
 }
 
 void BaseRenderer::GetHardwareAdapter(IDXGIFactory2* pFactory, IDXGIAdapter1** ppAdapter)
@@ -107,7 +107,7 @@ void BaseRenderer::SetupFullscreen(const std::optional<bool> forced_mode)
 				throw HrException(S_FALSE);
 			}
 		}
-		catch (HrException & e)
+		catch (HrException& e)
 		{
 			UNREFERENCED_PARAMETER(e);
 

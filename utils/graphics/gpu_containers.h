@@ -433,8 +433,9 @@ template<typename Element, typename Buffer> static bool Construct(
 template<typename Element, typename Buffer> 
 static bool FillGpuContainer(Buffer& buffer,
 	const Element* elements, std::size_t elements_num, ID3D12GraphicsCommandList* command_list,
-	UploadBuffer& upload_buffer, uint32_t dst_offset = 0, 
-	std::optional<D3D12_RESOURCE_STATES> final_state = {})
+	UploadBuffer& upload_buffer, uint32_t dst_offset = 0
+	//, std::optional<D3D12_RESOURCE_STATES> final_state = {}
+	)
 {
 	assert(elements && elements_num);
 	assert(command_list);

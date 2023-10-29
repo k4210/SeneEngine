@@ -1,14 +1,47 @@
 #pragma once
 #include "utils/small_container.h"
 #include "utils/math/Transform.h"
+#include "utils/message_queue.h"
+#include <optional>
+
+namespace CommonMsg
+{
+	enum State
+	{
+		Playing,
+		Loading,
+		InGameMenu,
+		MainMenu,
+		Background
+	};
+	struct Tick
+	{
+		uint64_t frame_id;
+		double delta;
+		double real_time;
+		//time to sync ?
+	};
+	struct StateChange
+	{
+		State actual_state;
+	};
+	struct ConfigReload
+	{
+		
+	};
+	using Message = std::variant<Tick, StateChange>;
+}
 
 class IBaseSystem
 {
 public:
-	virtual void Open() = 0;
-	virtual void Close() = 0;
+	virtual void Start() = 0;
+	virtual void Stop() = 0;
 	virtual void Destroy() = 0;
-	virtual bool IsOpen() const = 0;
+	virtual bool IsRunning() const = 0;
+
+	virtual void HandleCommonMessage(CommonMsg::Message) = 0;
+
 	//get id..
 	virtual ~IBaseSystem() = default;
 };
@@ -22,9 +55,11 @@ inline Microsecond GetTime()
 template<class TMsg>
 class BaseSystemImpl : public IBaseSystem
 {
-protected:
-	LockFreeQueue_SingleConsumer<TMsg, 32> msg_queue_;
+	//LockFreeQueue_SingleConsumer<TMsg, 32> msg_queue_;
+	TMessageQueue<TMsg> msg_queue_;
 	std::thread thread_;
+
+protected:
 	bool open_ = false;
 
 	virtual ~BaseSystemImpl() = default;
@@ -36,13 +71,23 @@ protected:
 	//Executed on main thread
 	virtual void CustomOpen() {}
 	virtual void CustomClose() {}
-
 	void Destroy() override {}
-	virtual Microsecond GetMessageBudget() const { return Microsecond{ 7000 }; }
+
+	virtual std::optional<Microsecond> GetMessageBudget() const { return {}; }
 
 	void HandleMessages()
 	{
-		const Microsecond time_budget = GetMessageBudget();
+		std::optional<Microsecond> budget = GetMessageBudget();
+		if (!budget)
+		{
+			while (auto opt_msg = msg_queue_.Pop())
+			{
+				HandleSingleMessage(*opt_msg);
+			}
+			return;
+		}
+
+		const Microsecond time_budget = *budget;
 		const Microsecond start_time = GetTime();
 		while (auto opt_msg = msg_queue_.Pop())
 		{
@@ -54,6 +99,7 @@ protected:
 
 	void SystemLoop()
 	{
+		msg_queue_.Preallocate(64);
 		ThreadInitialize();
 		while (open_)
 		{

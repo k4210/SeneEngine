@@ -160,10 +160,12 @@
     <ClCompile Include="utils\graphics\gpu_containers.cpp" />
     <ClCompile Include="utils\graphics\pipeline_state.cpp" />
     <ClCompile Include="utils\graphics\root_signature.cpp" />
+    <ClCompile Include="utils\log\log.cpp" />
     <ClCompile Include="utils\math\Random.cpp" />
     <ClCompile Include="utils\stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="physic_interface.h" />
     <ClInclude Include="primitives\mesh_data.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="systems\data_source\data_source_interface.h" />
@@ -177,12 +179,14 @@
     <ClInclude Include="utils\base_app.h" />
     <ClInclude Include="utils\base_app_helper.h" />
     <ClInclude Include="utils\base_system.h" />
+    <ClInclude Include="utils\common\base_types.h" />
     <ClInclude Include="utils\graphics\command_signature.h" />
     <ClInclude Include="utils\graphics\d3dx12.h" />
     <ClInclude Include="utils\graphics\gpu_containers.h" />
     <ClInclude Include="utils\graphics\pipeline_state.h" />
     <ClInclude Include="utils\graphics\root_signature.h" />
     <ClInclude Include="utils\hash.h" />
+    <ClInclude Include="utils\log\log.h" />
     <ClInclude Include="utils\math\Common.h" />
     <ClInclude Include="utils\math\Matrix3.h" />
     <ClInclude Include="utils\math\Matrix4.h" />

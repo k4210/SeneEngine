@@ -1,10 +1,10 @@
 #pragma once
 
-#include "utils/graphics/gpu_containers.h"
-#include "utils/math/VectorMath.h"
+#include "graphics/gpu_containers.h"
+#include "mathfu/mathfu.h"
 
+using namespace mathfu;
 using namespace DirectX;
-using namespace Math;
 
 namespace Const
 {
@@ -14,9 +14,9 @@ namespace Const
 
 struct Vertex
 {
-	XMFLOAT3 position;
-	XMFLOAT3 normal;
-	XMFLOAT2 texcoord;
+	float3 position;
+	float3 normal;
+	float2 texcoord;
 };
 
 struct MeshLODGPU

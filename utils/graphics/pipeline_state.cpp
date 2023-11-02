@@ -19,7 +19,6 @@
 #include <thread>
 #include <mutex>
 
-using Math::IsAligned;
 using Microsoft::WRL::ComPtr;
 
 static std::map< std::size_t, ComPtr<ID3D12PipelineState> > s_GraphicsPSOHashMap;

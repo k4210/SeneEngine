@@ -1,8 +1,7 @@
 #pragma once
 
-#include "utils/base_system.h"
-#include "utils/graphics/gpu_containers.h"
-#include "utils/math/Transform.h"
+#include "base_system.h"
+#include "graphics/gpu_containers.h"
 #include "primitives/mesh_data.h"
 
 namespace Const

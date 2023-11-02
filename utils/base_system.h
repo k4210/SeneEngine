@@ -1,36 +1,9 @@
 #pragma once
-#include "utils/small_container.h"
-#include "utils/math/Transform.h"
-#include "utils/message_queue.h"
+#include "small_container.h"
+#include "message_queue.h"
 #include <optional>
-
-namespace CommonMsg
-{
-	enum State
-	{
-		Playing,
-		Loading,
-		InGameMenu,
-		MainMenu,
-		Background
-	};
-	struct Tick
-	{
-		uint64_t frame_id;
-		double delta;
-		double real_time;
-		//time to sync ?
-	};
-	struct StateChange
-	{
-		State actual_state;
-	};
-	struct ConfigReload
-	{
-		
-	};
-	using Message = std::variant<Tick, StateChange>;
-}
+#include "mathfu/mathfu.h"
+#include "common_msg.h"
 
 class IBaseSystem
 {
@@ -42,7 +15,7 @@ public:
 
 	virtual void HandleCommonMessage(CommonMsg::Message) = 0;
 
-	//get id..
+	virtual std::string_view GetName() const = 0;
 	virtual ~IBaseSystem() = default;
 };
 
@@ -55,8 +28,8 @@ inline Microsecond GetTime()
 template<class TMsg>
 class BaseSystemImpl : public IBaseSystem
 {
-	//LockFreeQueue_SingleConsumer<TMsg, 32> msg_queue_;
-	TMessageQueue<TMsg> msg_queue_;
+	LockFreeQueue_SingleConsumer<TMsg, 32> msg_queue_;
+	//TMessageQueue<TMsg> msg_queue_;
 	std::thread thread_;
 
 protected:
@@ -74,6 +47,8 @@ protected:
 	void Destroy() override {}
 
 	virtual std::optional<Microsecond> GetMessageBudget() const { return {}; }
+
+	virtual void HandleCommonMessage(CommonMsg::Message) {}
 
 	void HandleMessages()
 	{
@@ -99,7 +74,7 @@ protected:
 
 	void SystemLoop()
 	{
-		msg_queue_.Preallocate(64);
+		//msg_queue_.Preallocate(64);
 		ThreadInitialize();
 		while (open_)
 		{
@@ -109,10 +84,10 @@ protected:
 		ThreadCleanUp();
 	}
 	
-	void Open() override { CustomOpen(); open_ = true; thread_ = std::thread(&BaseSystemImpl::SystemLoop, this); }
-	void Close() override { open_ = false; thread_.join(); CustomClose(); }
+	void Start() override { CustomOpen(); open_ = true; thread_ = std::thread(&BaseSystemImpl::SystemLoop, this); }
+	void Stop() override { open_ = false; thread_.join(); CustomClose(); }
 public:
-	bool IsOpen() const override { return open_; }
+	bool IsRunning() const override { return open_; }
 	void EnqueueMsg(TMsg&& msg) { msg_queue_.Enqueue(std::forward<TMsg>(msg)); }
 };
 
@@ -132,7 +107,7 @@ struct EntityUtils
 		entity.for_each_component(func);
 	}
 
-	template<typename E> static void UpdateTransform(E& entity, Math::Transform transform)
+	template<typename E> static void UpdateTransform(E& entity, mathfu::Transform transform)
 	{
 		auto func = [transform](auto& comp) { comp.UpdateTransform(transform); };
 		entity.for_each_component(func);

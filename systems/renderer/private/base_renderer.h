@@ -10,7 +10,6 @@ class BaseRenderer : public BaseSystemImpl<RT_MSG>
 protected:
 	RendererCommon common_;
 
-private:
 	ComPtr<IDXGISwapChain3> swap_chain_;
 	ComPtr<ID3D12CommandQueue> direct_command_queue_;
 	ComPtr<ID3D12CommandAllocator> command_allocators[Const::kFrameCount];

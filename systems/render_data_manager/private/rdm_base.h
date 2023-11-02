@@ -29,7 +29,7 @@ namespace IRenderDataManager
 		BoundingSphere get_bounding_sphere() const
 		{
 			assert(mesh);
-			return BoundingSphere(transform.translate, transform.scale * mesh->radius);
+			return BoundingSphere(XMFLOAT3(transform.translate.x, transform.translate.y, transform.translate.z), transform.scale * mesh->radius);
 		}
 	};
 }

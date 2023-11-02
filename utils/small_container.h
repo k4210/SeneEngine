@@ -7,15 +7,23 @@ struct Twins
 {
 private:
 	std::array<T, 2> buffers_;
-	uint32_t active_ = 0;
+	std::atomic<bool> second_active_ = false;
+	bool IsSecondActive() const
+	{
+		return second_active_.load(std::memory_order_relaxed);
+	}
+	uint32 GetActiveIndex() const
+	{
+		return IsSecondActive() ? 1 : 0;
+	}
 
 public:
-			void	FlipActive()			{ active_ = 1 - active_; }
+			void	FlipActive()			{ second_active_ = !IsSecondActive(); }
 
-			T&		GetActive()				{ return buffers_[active_]; }
-	const	T&		GetActive()		const	{ return buffers_[active_]; }
-			T&		GetInactive()			{ return buffers_[1 - active_]; }
-	const	T&		GetInactive()	const	{ return buffers_[1 - active_]; }
+			T&		GetActive()				{ return buffers_[GetActiveIndex()]; }
+	const	T&		GetActive()		const	{ return buffers_[GetActiveIndex()]; }
+			T&		GetInactive()			{ return buffers_[1 - GetActiveIndex()]; }
+	const	T&		GetInactive()	const	{ return buffers_[1 - GetActiveIndex()]; }
 
 	const	auto	begin()			const	{ return buffers_.begin(); }
 			auto	begin()					{ return buffers_.begin(); }

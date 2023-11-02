@@ -12,6 +12,7 @@
 #include "stdafx.h"
 #include "base_app.h"
 #include "base_app_helper.h"
+#include "stat/stat.h"
 
 using namespace Microsoft::WRL;
 
@@ -87,6 +88,8 @@ int Win32Application::Run(BaseApp& app, int nCmdShow, UINT width, UINT height)
 	app.OnInit(hwnd_, width, height);
 	ShowWindow(hwnd_, nCmdShow);
 	MSG msg = {};
+	uint64 frame_counter = 0;
+	double time = Stat::TimeScope::GetMicrosecondsSinceAppStart();
 	while (true)
 	{
 		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
@@ -96,6 +99,14 @@ int Win32Application::Run(BaseApp& app, int nCmdShow, UINT width, UINT height)
 			if (msg.message == WM_QUIT)
 			{
 				return static_cast<char>(msg.wParam);
+			}
+			else if(msg.message == WM_USER)
+			{
+				frame_counter++;
+				const double new_time = Stat::TimeScope::GetMicrosecondsSinceAppStart();
+				const double delta_second = (new_time - time) / 1000.0;
+				time = new_time;
+				app.Broadcast(CommonMsg::Frame{ frame_counter, delta_second });
 			}
 		}
 		app.Tick();
@@ -137,6 +148,10 @@ LRESULT CALLBACK Win32Application::WindowProc(HWND hWnd, UINT message, WPARAM wP
 			return 0;
 		}
 		break;
+
+	case WM_USER:
+		if (app) app->Broadcast(CommonMsg::Frame{ 0, 0.0 });
+		return 0;
 	}
 	return DefWindowProc(hWnd, message, wParam, lParam);
 }

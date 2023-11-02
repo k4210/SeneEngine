@@ -1,10 +1,11 @@
 #include "stdafx.h"
 #include "../renderer_interface.h"
-#include "utils/base_app_helper.h"
+#include "base_app_helper.h"
 #include "primitives/mesh_data.h"
-#include "utils/graphics/command_signature.h"
-#include "utils/graphics/root_signature.h"
-#include "utils/graphics/pipeline_state.h"
+#include "graphics/command_signature.h"
+#include "graphics/root_signature.h"
+#include "graphics/pipeline_state.h"
+#include "stat/stat.h"
 #include <cstddef>
 
 #include "base_renderer.h"
@@ -192,6 +193,8 @@ protected:
 
 	void Tick() override
 	{
+		STAT_TIME_SCOPE(renderer, tick);
+
 		if (!meshes_buff_ || !static_nodes_ || !static_instances_ || !static_instances_in_node)
 			return;
 		auto& pf = GetPerFrame();
@@ -302,6 +305,7 @@ protected:
 			ThrowIfFailed(command_list_->Close());
 			Execute(command_list_.Get());
 			Present();
+			SendMessage(hwnd_, WM_USER, 0, 0);
 			MoveToNextFrame();
 		}
 	}
@@ -471,6 +475,8 @@ protected:
 		persistent_descriptor_heap_.destroy();
 		reset_counter_src_.destroy();
 	}
+
+	std::string_view GetName() const override { return "Renderer"; }
 };
 
 const RendererCommon& IRenderer::GetRendererCommon() { return BaseRenderer::GetCommon(); }

@@ -63,7 +63,7 @@ class SceneManager
 			float best_dist_sq = -1.0f;
 			auto find_best_node = [&](const BoundingSphere& node)
 			{
-				auto distance_sq = [&](const XMFLOAT3& a, const XMFLOAT3& b) -> float
+				auto distance_sq = [&](const auto& a, const auto& b) -> float
 				{
 					const XMFLOAT3 diff(a.x - b.x, a.y - b.y, a.z - b.z);
 					return diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
@@ -91,7 +91,8 @@ class SceneManager
 		}
 		else
 		{
-			BoundingSphere* node = nodes_.allocate(instance.transform.translate, instance.mesh->radius);
+			const float3 trans = instance.transform.translate;
+			BoundingSphere* node = nodes_.allocate(XMFLOAT3(trans.x, trans.y, trans.z), instance.mesh->radius);
 			assert(node);
 			num_nodes_++;
 			add_instance_to_node(nodes_.safe_get_index(node), 0);

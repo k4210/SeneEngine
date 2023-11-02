@@ -100,7 +100,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)\utils\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PrecompiledHeaderOutputFile>$(IntDir)stdafx.pch</PrecompiledHeaderOutputFile>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -155,13 +155,14 @@
     <ClCompile Include="systems\renderer\private\base_renderer.cpp" />
     <ClCompile Include="systems\renderer\private\renderer.cpp" />
     <ClCompile Include="systems\render_data_manager\private\render_data_manager.cpp" />
+    <ClCompile Include="systems\statistics\statistics_system.cpp" />
     <ClCompile Include="utils\base_app.cpp" />
     <ClCompile Include="utils\graphics\command_signature.cpp" />
     <ClCompile Include="utils\graphics\gpu_containers.cpp" />
     <ClCompile Include="utils\graphics\pipeline_state.cpp" />
     <ClCompile Include="utils\graphics\root_signature.cpp" />
     <ClCompile Include="utils\log\log.cpp" />
-    <ClCompile Include="utils\math\Random.cpp" />
+    <ClCompile Include="utils\stat\stat.cpp" />
     <ClCompile Include="utils\stdafx.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -176,10 +177,13 @@
     <ClInclude Include="systems\render_data_manager\private\rdm_base.h" />
     <ClInclude Include="systems\render_data_manager\private\scene_manager.h" />
     <ClInclude Include="systems\render_data_manager\render_data_manager_interface.h" />
+    <ClInclude Include="systems\statistics\statistics_system.h" />
     <ClInclude Include="utils\base_app.h" />
     <ClInclude Include="utils\base_app_helper.h" />
     <ClInclude Include="utils\base_system.h" />
     <ClInclude Include="utils\common\base_types.h" />
+    <ClInclude Include="utils\common_msg.h" />
+    <ClInclude Include="utils\config\config.h" />
     <ClInclude Include="utils\graphics\command_signature.h" />
     <ClInclude Include="utils\graphics\d3dx12.h" />
     <ClInclude Include="utils\graphics\gpu_containers.h" />
@@ -187,17 +191,16 @@
     <ClInclude Include="utils\graphics\root_signature.h" />
     <ClInclude Include="utils\hash.h" />
     <ClInclude Include="utils\log\log.h" />
-    <ClInclude Include="utils\math\Common.h" />
-    <ClInclude Include="utils\math\Matrix3.h" />
-    <ClInclude Include="utils\math\Matrix4.h" />
-    <ClInclude Include="utils\math\Quaternion.h" />
-    <ClInclude Include="utils\math\Random.h" />
-    <ClInclude Include="utils\math\Scalar.h" />
-    <ClInclude Include="utils\math\Transform.h" />
-    <ClInclude Include="utils\math\Vector.h" />
-    <ClInclude Include="utils\math\VectorMath.h" />
+    <ClInclude Include="utils\mathfu\constants.h" />
+    <ClInclude Include="utils\mathfu\mathfu.h" />
+    <ClInclude Include="utils\mathfu\matrix.h" />
+    <ClInclude Include="utils\mathfu\quaternion.h" />
+    <ClInclude Include="utils\mathfu\rect.h" />
+    <ClInclude Include="utils\mathfu\utilities.h" />
+    <ClInclude Include="utils\mathfu\vector.h" />
     <ClInclude Include="utils\mpsc_queue.h" />
     <ClInclude Include="utils\small_container.h" />
+    <ClInclude Include="utils\stat\stat.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\compact_depth_cs.hlsl">
@@ -294,7 +297,6 @@
   <ItemGroup>
     <None Include="shaders\common.hlsli" />
     <None Include="shaders\common_scene.hlsli" />
-    <None Include="utils\math\Functions.inl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

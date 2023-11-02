@@ -1,13 +1,14 @@
 #pragma once
 
 #ifndef DO_LOG
-	#define DO_LOG 0
+	#define DO_LOG 1
 #endif
 
-#ifdef DO_LOG
+#if DO_LOG
 
 #include <format>
-#include "utils/common/base_types.h"
+#include <functional>
+#include "common/base_types.h"
 
 #define IF_DO_LOG(X) X
 
@@ -17,25 +18,18 @@ enum class ELogPriority : uint8
 	Log,
 	Display,
 	Warning,
-	Error,
-	Fatal
+	Error,	// Breakpoint
+	Assert,	// Callstack
+	Fatal	// Exit
 };
 
-class LogCategory
+struct LogCategory
 {
-public:
-	const char* const name;
-	std::atomic<ELogPriority> default_visibility;
-
-private:
-	static void Register(LogCategory&);
-	static void Unregister(LogCategory&);
-
-public:
 	static const LogCategory& GetDefault();
 	static bool ChangeVisibility(const char* name, const ELogPriority new_visibility);
+	static void ForEach(std::function<void(LogCategory&)>& func);
 
-	LogCategory(const char* in_name, const ELogPriority in_visibility)
+	LogCategory(const char* in_name, const ELogPriority in_visibility = ELogPriority::Log)
 		: name(in_name), default_visibility(in_visibility)
 	{
 		Register(*this);
@@ -49,63 +43,65 @@ public:
 	LogCategory(LogCategory&&) = delete;
 	LogCategory& operator=(const LogCategory&) = delete;
 	LogCategory& operator=(LogCategory&&) = delete;
+
+	void Log(ELogPriority priority, std::string_view msg) const;
+
+private:
+	static void Register(LogCategory&);
+	static void Unregister(LogCategory&);
+
+public:
+	const char* const name;
+	std::atomic<ELogPriority> default_visibility;
 };
 
-namespace log_details
+template<typename... Args>
+void LOG(const LogCategory& category, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
 {
-	void InnerLog(const char* category_name, ELogPriority priority, std::string_view msg);
+	category.Log(priority, std::format(std::move(fmt), std::forward<Args>(args)...));
 }
 
 template<typename... Args>
-void Log(const LogCategory& category, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+void LOG(ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
 {
-	if (category.default_visibility.load(std::memory_order_relaxed) <= priority)
+	LOG(LogCategory::GetDefault(), priority, std::move(fmt), std::forward<Args>(args)...);
+}
+
+template<typename... Args>
+void LOG(std::format_string<Args...> fmt, Args&&... args)
+{
+	LOG(ELogPriority::Log, std::move(fmt), std::forward<Args>(args)...);
+}
+
+template<typename... Args>
+void CLOG(bool bCondition, const LogCategory& category, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+{
+	if (bCondition)
 	{
-		log_details::InnerLog(category.name, priority, std::format(std::move(fmt), std::forward(args...)));
+		LOG(category, priority, std::move(fmt), std::forward<Args>(args)...);
 	}
 }
 
 template<typename... Args>
-void Log(ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
-{
-	Log(log_details::LogCategory::GetDefault(), priority, std::move(fmt), std::forward(args...));
-}
-
-template<typename... Args>
-void Log(std::format_string<Args...> fmt, Args&&... args)
-{
-	Log(ELogPriority::Log, std::move(fmt), std::forward(args...));
-}
-
-template<typename... Args>
-void CondLog(bool bCondition, const LogCategory& category, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+void CLOG(bool bCondition, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
 {
 	if (bCondition)
 	{
-		Log(category, priority, std::move(fmt), std::forward(args...));
+		LOG(priority, std::move(fmt), std::forward<Args>(args)...);
 	}
 }
 
 template<typename... Args>
-void CondLog(bool bCondition, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+void CLOG(bool bCondition, std::format_string<Args...> fmt, Args&&... args)
 {
 	if (bCondition)
 	{
-		Log(priority, std::move(fmt), std::forward(args...));
-	}
-}
-
-template<typename... Args>
-void CondLog(bool bCondition, std::format_string<Args...> fmt, Args&&... args)
-{
-	if (bCondition)
-	{
-		Log(std::move(fmt), std::forward(args...));
+		LOG(std::move(fmt), std::forward<Args>(args)...);
 	}
 }
 
 #else
 #define IF_DO_LOG(...)
-#define Log(...)
-#define CondLog(...)
+#define LOG(...)
+#define CLOG(...)
 #endif

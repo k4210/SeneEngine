@@ -55,6 +55,7 @@ protected:
 	{
 		EntityUtils::Cleanup(triangle_instance_);
 	}
+	std::string_view GetName() const override { return "GameplaySystem"; }
 };
 
 void IGameplay::EnqueueMsg(GP_MSG&& msg) { assert(gameplay_inst); gameplay_inst->EnqueueMsg(std::forward<GP_MSG>(msg)); }

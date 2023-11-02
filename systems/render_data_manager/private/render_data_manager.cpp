@@ -2,6 +2,7 @@
 #include "rdm_base.h"
 #include "mesh_manager.h"
 #include "scene_manager.h"
+#include "stat/stat.h"
 
 struct GPUCommands
 {
@@ -233,98 +234,102 @@ protected:
 	{
 		// Assumptions: no sync mesh/instances (common state).
 		// Assumptions: Upload buffer is not filled during msg handling.
+		
 		const Microsecond start_time = GetTime();
-
-		// 1. Wait for last update (5). Reopen CL, reset upload.
-		fence_.WaitForGPU(commands_);
-		waiting_meshes_.FlipActive();
-		auto send_loaded_meshes = [](std::vector<std::shared_ptr<Mesh>>& ready_to_register)
 		{
-			if (ready_to_register.size())
-			{
-				IRenderer::EnqueueMsg({ IRenderer::RT_MSG_RegisterMeshes { std::move(ready_to_register) } });
-				ready_to_register.clear();
-			}
-		};
-		send_loaded_meshes(waiting_meshes_.GetActive());
-		commands_.Reopen();
-		upload_buffer_.reset();
-		actual_batch_++;
-
-		// 2. Update Nodes
-		scene_.CompactNodes();
-		const uint32_t nodes_num = scene_.NumNodes();
-		assert(nodes_num < Const::kStaticNodesCapacity);
-		const bool nodes_update_requiried = scene_.NeedsNodesUpdate();
-		if(nodes_update_requiried)
-		{
-			nodes_.FlipActive();
-			scene_.UpdateNodes(nodes_.GetActive().bounding_sphere, commands_.GetCommandList(), upload_buffer_);
-			scene_.UpdateInstancesInNodes(nodes_.GetActive().instances_per_node, commands_.GetCommandList(), upload_buffer_);
-		}
-
-		//3. Update instances
-		bool must_sync_rt = false;
-		while(true)
-		{
-			if (!IsOpen())
-				return;
-			const EUpdateResult local_status = scene_.UpdateInstancesBuffer(instances_buffer_, commands_.GetCommandList(), upload_buffer_);
-			if (local_status == EUpdateResult::NoUpdateRequired && !nodes_update_requiried)
-				break;
-			commands_.Execute();
+			STAT_TIME_SCOPE(renderer, tick);
+			// 1. Wait for last update (5). Reopen CL, reset upload.
 			fence_.WaitForGPU(commands_);
+			waiting_meshes_.FlipActive();
+			auto send_loaded_meshes = [](std::vector<std::shared_ptr<Mesh>>& ready_to_register)
+				{
+					if (ready_to_register.size())
+					{
+						IRenderer::EnqueueMsg({ IRenderer::RT_MSG_RegisterMeshes { std::move(ready_to_register) } });
+						ready_to_register.clear();
+					}
+				};
+			send_loaded_meshes(waiting_meshes_.GetActive());
 			commands_.Reopen();
 			upload_buffer_.reset();
-			must_sync_rt = true;
-			if(local_status != EUpdateResult::UpdateStillNeeded)
-				break;
+			actual_batch_++;
+
+			// 2. Update Nodes
+			scene_.CompactNodes();
+			const uint32_t nodes_num = scene_.NumNodes();
+			assert(nodes_num < Const::kStaticNodesCapacity);
+			const bool nodes_update_requiried = scene_.NeedsNodesUpdate();
+			if (nodes_update_requiried)
+			{
+				nodes_.FlipActive();
+				scene_.UpdateNodes(nodes_.GetActive().bounding_sphere, commands_.GetCommandList(), upload_buffer_);
+				scene_.UpdateInstancesInNodes(nodes_.GetActive().instances_per_node, commands_.GetCommandList(), upload_buffer_);
+			}
+
+			//3. Update instances
+			bool must_sync_rt = false;
+			while (true)
+			{
+				if (!IsRunning())
+					return;
+				const EUpdateResult local_status = scene_.UpdateInstancesBuffer(instances_buffer_, commands_.GetCommandList(), upload_buffer_);
+				if (local_status == EUpdateResult::NoUpdateRequired && !nodes_update_requiried)
+					break;
+				commands_.Execute();
+				fence_.WaitForGPU(commands_);
+				commands_.Reopen();
+				upload_buffer_.reset();
+				must_sync_rt = true;
+				if (local_status != EUpdateResult::UpdateStillNeeded)
+					break;
+			}
+
+			// 4. Send new node buff to Render Thread. -> Get fence ?
+			if (must_sync_rt)
+			{
+				std::promise<IRenderer::SyncGPU> rt_promise = fence_.MakePromiseRT();
+				IRenderer::EnqueueMsg({ IRenderer::RT_MSG_StaticBuffers {
+						nodes_.GetActive().bounding_sphere.get_srv_handle(),
+						instances_buffer_.get_srv_handle(),
+						nodes_.GetActive().instances_per_node.get_srv_handle(),
+						nodes_num, std::move(rt_promise)} });
+			}
+
+			// 5. Update meshes/IB/VB -> CL
+			while (true)
+			{
+				const EUpdateResult all_meshes_updated = meshes_.Update(mesh_buffer_, commands_.GetCommandList(), upload_buffer_);
+				if (all_meshes_updated == EUpdateResult::NoUpdateRequired)
+					break;
+				commands_.Execute(); // we'll wait for it in 1st step
+				if (all_meshes_updated == EUpdateResult::Updated)
+					break;
+				fence_.WaitForGPU(commands_);
+				commands_.Reopen();
+				upload_buffer_.reset();
+			}
+
+			// 6. Add new nodes (locally on CPU)
+			scene_.AddPendingInstances();
+
+			// 7. Wait until [n-1] node buff is no longer used by RT. (fence from 4th step)
+			if (must_sync_rt)
+			{
+				fence_.WaitForRT(open_);
+			}
+
+			// 8. Remove pending IB/VB and meshes.
+			meshes_.FlushPendingRemove();
 		}
-
-		// 4. Send new node buff to Render Thread. -> Get fence ?
-		if(must_sync_rt)
-		{
-			std::promise<IRenderer::SyncGPU> rt_promise = fence_.MakePromiseRT();
-			IRenderer::EnqueueMsg({ IRenderer::RT_MSG_StaticBuffers {
-					nodes_.GetActive().bounding_sphere.get_srv_handle(),
-					instances_buffer_.get_srv_handle(),
-					nodes_.GetActive().instances_per_node.get_srv_handle(),
-					nodes_num, std::move(rt_promise)} });
-		}
-
-		// 5. Update meshes/IB/VB -> CL
-		while (true)
-		{
-			const EUpdateResult all_meshes_updated = meshes_.Update(mesh_buffer_, commands_.GetCommandList(), upload_buffer_);
-			if (all_meshes_updated == EUpdateResult::NoUpdateRequired)
-				break;
-			commands_.Execute(); // we'll wait for it in 1st step
-			if (all_meshes_updated == EUpdateResult::Updated)
-				break;
-			fence_.WaitForGPU(commands_); 
-			commands_.Reopen();
-			upload_buffer_.reset();
-		}
-
-		// 6. Add new nodes (locally on CPU)
-		scene_.AddPendingInstances();
-
-		// 7. Wait until [n-1] node buff is no longer used by RT. (fence from 4th step)
-		if (must_sync_rt)
-		{
-			fence_.WaitForRT(open_);
-		}
-
-		// 8. Remove pending IB/VB and meshes.
-		meshes_.FlushPendingRemove();
-
 		const Microsecond duration = GetTime() - start_time;
 		const Microsecond budget{ 7000 };
-		if (IsOpen() && duration < budget)
+		if (IsRunning() && duration < budget)
 		{
 			std::this_thread::sleep_for(budget - duration);
 		}
 	}
+
+	std::string_view GetName() const override { return "RenderDataManager"; }
 };
 
 IBaseSystem* IRenderDataManager::CreateSystem() { return new RenderDataManager(); }

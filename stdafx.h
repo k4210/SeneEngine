@@ -22,6 +22,7 @@
 #include "third_party/bitset2/bitset2.hpp"
 #include "utils/graphics/d3dx12.h"
 #include "utils/mpsc_queue.h"
+#include "utils/log/log.h"
 
 #include <windows.h>
 #include <wrl.h>

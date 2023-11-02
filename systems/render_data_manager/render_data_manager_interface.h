@@ -2,7 +2,7 @@
 
 #include "utils/base_system.h"
 #include "utils/graphics/gpu_containers.h"
-#include "utils/math/Transform.h"
+#include "mathfu/mathfu.h"
 #include "primitives/mesh_data.h"
 
 namespace IRenderDataManager
@@ -15,7 +15,7 @@ namespace IRenderDataManager
 	{
 		MeshComponent* component_ = nullptr;
 	public:
-		void Initialize(std::shared_ptr<Mesh>&& mesh, Transform&& transform);
+		void Initialize(std::shared_ptr<Mesh>&& mesh, mathfu::Transform&& transform);
 		void UpdateTransform(Transform transform);
 		void Cleanup();
 

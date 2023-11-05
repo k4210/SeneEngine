@@ -157,6 +157,8 @@
     <ClCompile Include="systems\render_data_manager\private\render_data_manager.cpp" />
     <ClCompile Include="systems\statistics\statistics_system.cpp" />
     <ClCompile Include="utils\base_app.cpp" />
+    <ClCompile Include="utils\common\utils.cpp" />
+    <ClCompile Include="utils\config\config.cpp" />
     <ClCompile Include="utils\graphics\command_signature.cpp" />
     <ClCompile Include="utils\graphics\gpu_containers.cpp" />
     <ClCompile Include="utils\graphics\pipeline_state.cpp" />

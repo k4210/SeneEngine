@@ -19,6 +19,10 @@
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers.
 #endif
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "third_party/bitset2/bitset2.hpp"
 #include "utils/graphics/d3dx12.h"
 #include "utils/mpsc_queue.h"
@@ -37,6 +41,8 @@
 #include <string>
 #include <deque>
 #include <vector>
+#include <set>
+#include <map>
 #include <thread>
 #include <future>
 #include <variant>
@@ -45,7 +51,11 @@
 #include <utility>
 #include <unordered_map>
 #include <mutex>
+#include <shared_mutex>
+#include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <algorithm>
+#include <limits>
 
 #include <assert.h>

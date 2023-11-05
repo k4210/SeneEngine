@@ -2,7 +2,10 @@
 #include "rdm_base.h"
 #include "mesh_manager.h"
 #include "scene_manager.h"
+#include "small_container.h"
 #include "stat/stat.h"
+#include "primitives/mesh_data.h"
+#include "common/utils.h"
 
 struct GPUCommands
 {
@@ -102,7 +105,7 @@ public:
 		assert(rt_future_.valid());
 		for (std::future_status status = std::future_status::deferred;
 			(status != std::future_status::ready) && open;
-			status = rt_future_.wait_for(Microsecond{ 8000 }));
+			status = rt_future_.wait_for(Utils::Microsecond{ 8000 }));
 		if (!open)
 			return;
 		assert(rt_future_.valid());
@@ -235,9 +238,9 @@ protected:
 		// Assumptions: no sync mesh/instances (common state).
 		// Assumptions: Upload buffer is not filled during msg handling.
 		
-		const Microsecond start_time = GetTime();
+		const auto start_time = Utils::GetTime();
 		{
-			STAT_TIME_SCOPE(renderer, tick);
+			STAT_TIME_SCOPE(renderer_data_manager, tick);
 			// 1. Wait for last update (5). Reopen CL, reset upload.
 			fence_.WaitForGPU(commands_);
 			waiting_meshes_.FlipActive();
@@ -321,11 +324,12 @@ protected:
 			// 8. Remove pending IB/VB and meshes.
 			meshes_.FlushPendingRemove();
 		}
-		const Microsecond duration = GetTime() - start_time;
-		const Microsecond budget{ 7000 };
+		const auto duration = Utils::GetTime() - start_time;
+		const Utils::Microsecond budget{ 7000 };
 		if (IsRunning() && duration < budget)
 		{
-			std::this_thread::sleep_for(budget - duration);
+			auto delta = budget - duration;
+			std::this_thread::sleep_for(delta);
 		}
 	}
 

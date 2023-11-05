@@ -9,6 +9,7 @@
 #include <functional>
 #include <span>
 #include "common/base_types.h"
+#include "common/utils.h"
 
 #define IF_DO_STAT(X) X
 namespace Stat
@@ -43,7 +44,7 @@ namespace Stat
 			Unregister(index);
 		}
 
-		void PassValue(double delta) const;
+		void PassValue(double value) const;
 
 		const uint32 index;
 		const EMode mode;
@@ -54,22 +55,20 @@ namespace Stat
 
 	struct TimeScope
 	{
-		static double GetMicrosecondsSinceAppStart();
-
 		TimeScope(const Id& in_id)
 			: id(in_id)
-			, start(GetMicrosecondsSinceAppStart())
+			, start(Utils::GetTime())
 		{}
 
 		~TimeScope()
 		{
-			const double delta_ms = GetMicrosecondsSinceAppStart() - start;
-			id.PassValue(delta_ms);
+			const Utils::TimeSpan delta = Utils::GetTime() - start;
+			id.PassValue(Utils::ToMiliseconds(delta));
 		}
 
 	private:
 		const Id& id;
-		const double start;
+		const Utils::TimeType start;
 	};
 }
 // Do not use directly

@@ -4,6 +4,7 @@
 #include <optional>
 #include "mathfu/mathfu.h"
 #include "common_msg.h"
+#include "common/utils.h"
 
 class IBaseSystem
 {
@@ -18,12 +19,6 @@ public:
 	virtual std::string_view GetName() const = 0;
 	virtual ~IBaseSystem() = default;
 };
-
-using Microsecond = std::chrono::microseconds;
-inline Microsecond GetTime()
-{
-	return std::chrono::duration_cast<Microsecond>(std::chrono::system_clock::now().time_since_epoch());
-}
 
 template<class TMsg>
 class BaseSystemImpl : public IBaseSystem
@@ -46,13 +41,13 @@ protected:
 	virtual void CustomClose() {}
 	void Destroy() override {}
 
-	virtual std::optional<Microsecond> GetMessageBudget() const { return {}; }
+	virtual std::optional<Utils::TimeSpan> GetMessageBudget() const { return {}; }
 
 	virtual void HandleCommonMessage(CommonMsg::Message) {}
 
 	void HandleMessages()
 	{
-		std::optional<Microsecond> budget = GetMessageBudget();
+		std::optional<Utils::TimeSpan> budget = GetMessageBudget();
 		if (!budget)
 		{
 			while (auto opt_msg = msg_queue_.Pop())
@@ -62,12 +57,12 @@ protected:
 			return;
 		}
 
-		const Microsecond time_budget = *budget;
-		const Microsecond start_time = GetTime();
+		const Utils::TimeSpan time_budget = *budget;
+		const auto start_time = Utils::GetTime();
 		while (auto opt_msg = msg_queue_.Pop())
 		{
 			HandleSingleMessage(*opt_msg);
-			if ((GetTime() - start_time) > time_budget)
+			if ((Utils::GetTime() - start_time) > time_budget)
 				break;
 		}
 	}
@@ -89,27 +84,4 @@ protected:
 public:
 	bool IsRunning() const override { return open_; }
 	void EnqueueMsg(TMsg&& msg) { msg_queue_.Enqueue(std::forward<TMsg>(msg)); }
-};
-
-struct EntityUtils
-{
-	template<typename E> static bool AllComponentsValid(const E& entity)
-	{
-		bool valid = true;
-		auto func = [&valid](const auto& comp) { valid = valid && comp.IsValid(); };
-		const_cast<E&>(entity).for_each_component(func);
-		return valid;
-	}
-
-	template<typename E> static void Cleanup(E& entity)
-	{
-		auto func = [](auto& comp) { comp.Cleanup(); };
-		entity.for_each_component(func);
-	}
-
-	template<typename E> static void UpdateTransform(E& entity, mathfu::Transform transform)
-	{
-		auto func = [transform](auto& comp) { comp.UpdateTransform(transform); };
-		entity.for_each_component(func);
-	}
 };

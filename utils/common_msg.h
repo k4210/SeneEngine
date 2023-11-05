@@ -2,9 +2,25 @@
 
 #include <variant>
 #include "common/base_types.h"
+#include "common/utils.h"
 
 namespace CommonMsg
 {
+	enum class EMsgType : uint8
+	{
+		Frame = 1,
+	};
+
+	inline UINT_PTR ToWParam(EMsgType msg)
+	{
+		return static_cast<UINT_PTR>(msg);
+	}
+
+	inline EMsgType ToMsgType(UINT_PTR msg)
+	{
+		return static_cast<EMsgType>(msg);
+	}
+
 	enum class State
 	{
 		Playing,
@@ -16,7 +32,7 @@ namespace CommonMsg
 	struct Frame
 	{
 		uint64 frame_id;
-		double delta;
+		Utils::TimeSpan delta;
 	};
 	struct StateChange
 	{

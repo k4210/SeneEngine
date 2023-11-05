@@ -1,6 +1,10 @@
 #pragma once
+
+#include <atomic>
+#include <array>
 #include <algorithm>
 #include "third_party/bitset2/bitset2.hpp" 
+#include "common/base_types.h"
 
 template<typename T>
 struct Twins
@@ -8,11 +12,13 @@ struct Twins
 private:
 	std::array<T, 2> buffers_;
 	std::atomic<bool> second_active_ = false;
-	bool IsSecondActive() const
+
+	inline bool IsSecondActive() const
 	{
 		return second_active_.load(std::memory_order_relaxed);
 	}
-	uint32 GetActiveIndex() const
+
+	inline uint32 GetActiveIndex() const
 	{
 		return IsSecondActive() ? 1 : 0;
 	}

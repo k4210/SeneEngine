@@ -5,6 +5,7 @@
 #include "small_container.h"
 #include <variant>
 
+#if DO_STAT
 namespace Statistics
 {
 	struct StartDisplay
@@ -38,10 +39,15 @@ namespace Statistics
 		void operator()(StartDisplay msg);
 
 		void operator()(StopDisplay msg);
-
-		using ValueArray = std::array<std::atomic<double>, 1024>;
+		struct StatValue
+		{
+			std::atomic<double> value = 0.0;
+			std::atomic<uint32> counter = 0;
+		};
+		using ValueArray = std::array<StatValue, 1024>;
 		Twins<ValueArray> buffers_;
 	};
 
 	IBaseSystem* CreateSystem();
 }
+#endif

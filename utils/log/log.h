@@ -12,7 +12,7 @@
 
 #define IF_DO_LOG(X) X
 
-enum class ELogPriority : uint8
+enum class ELog : uint8
 {
 	Verbose,
 	Log,
@@ -26,10 +26,10 @@ enum class ELogPriority : uint8
 struct LogCategory
 {
 	static const LogCategory& GetDefault();
-	static bool ChangeVisibility(const char* name, const ELogPriority new_visibility);
+	static bool ChangeVisibility(const char* name, const ELog new_visibility);
 	static void ForEach(std::function<void(LogCategory&)>& func);
 
-	LogCategory(const char* in_name, const ELogPriority in_visibility = ELogPriority::Log)
+	LogCategory(const char* in_name, const ELog in_visibility = ELog::Log)
 		: name(in_name), default_visibility(in_visibility)
 	{
 		Register(*this);
@@ -44,7 +44,7 @@ struct LogCategory
 	LogCategory& operator=(const LogCategory&) = delete;
 	LogCategory& operator=(LogCategory&&) = delete;
 
-	void Log(ELogPriority priority, std::string_view msg) const;
+	void Log(ELog priority, std::string_view msg) const;
 
 private:
 	static void Register(LogCategory&);
@@ -52,17 +52,23 @@ private:
 
 public:
 	const char* const name;
-	std::atomic<ELogPriority> default_visibility;
+	std::atomic<ELog> default_visibility;
 };
 
 template<typename... Args>
-void LOG(const LogCategory& category, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+void LOG(const LogCategory& category, ELog priority, std::format_string<Args...> fmt, Args&&... args)
 {
 	category.Log(priority, std::format(std::move(fmt), std::forward<Args>(args)...));
 }
 
 template<typename... Args>
-void LOG(ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+void LOG(const LogCategory& category, std::format_string<Args...> fmt, Args&&... args)
+{
+	LOG(category, ELog::Log, std::move(fmt), std::forward<Args>(args)...);
+}
+
+template<typename... Args>
+void LOG(ELog priority, std::format_string<Args...> fmt, Args&&... args)
 {
 	LOG(LogCategory::GetDefault(), priority, std::move(fmt), std::forward<Args>(args)...);
 }
@@ -70,11 +76,11 @@ void LOG(ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
 template<typename... Args>
 void LOG(std::format_string<Args...> fmt, Args&&... args)
 {
-	LOG(ELogPriority::Log, std::move(fmt), std::forward<Args>(args)...);
+	LOG(ELog::Log, std::move(fmt), std::forward<Args>(args)...);
 }
 
 template<typename... Args>
-void CLOG(bool bCondition, const LogCategory& category, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+void CLOG(bool bCondition, const LogCategory& category, ELog priority, std::format_string<Args...> fmt, Args&&... args)
 {
 	if (bCondition)
 	{
@@ -83,7 +89,16 @@ void CLOG(bool bCondition, const LogCategory& category, ELogPriority priority, s
 }
 
 template<typename... Args>
-void CLOG(bool bCondition, ELogPriority priority, std::format_string<Args...> fmt, Args&&... args)
+void CLOG(bool bCondition, const LogCategory& category, std::format_string<Args...> fmt, Args&&... args)
+{
+	if (bCondition)
+	{
+		LOG(category, std::move(fmt), std::forward<Args>(args)...);
+	}
+}
+
+template<typename... Args>
+void CLOG(bool bCondition, ELog priority, std::format_string<Args...> fmt, Args&&... args)
 {
 	if (bCondition)
 	{

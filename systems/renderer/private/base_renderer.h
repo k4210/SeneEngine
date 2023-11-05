@@ -50,7 +50,8 @@ protected:
 
 	void WaitForGpu();
 
-	void MoveToNextFrame();
+	bool StartMoveToNextFrame();
+	void EndMoveToNextFrame(bool need_to_wait);
 
 	SyncGPU PrevFrameSync();
 

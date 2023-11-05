@@ -47,22 +47,13 @@ namespace Stat
 		g_handle_stats = func;
 	}
 
-	void Id::PassValue(double delta_ms) const
+	void Id::PassValue(double value) const
 	{
 		HandleStatsFunctionPtr func = g_handle_stats.load(std::memory_order_relaxed);
 		if (func)
 		{
-			func(index, mode, delta_ms);
+			func(index, mode, value);
 		}
-	}
-
-	const auto g_app_start = std::chrono::steady_clock::now();
-
-	double TimeScope::GetMicrosecondsSinceAppStart()
-	{
-		using namespace std;
-		const auto nano = (std::chrono::steady_clock::now() - g_app_start) / 1ns;
-		return nano / 1000.0;
 	}
 }
 

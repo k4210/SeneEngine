@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "base_renderer.h"
+#include "stat/stat.h"
 
 static BaseRenderer* renderer_inst = nullptr;
 
@@ -150,20 +151,30 @@ void BaseRenderer::WaitForGpu()
 	fence_value++;
 }
 
-void BaseRenderer::MoveToNextFrame()
+bool BaseRenderer::StartMoveToNextFrame()
 {
 	const uint64_t current_fence_value = fence_values_[frame_index_];
 	ThrowIfFailed(direct_command_queue_->Signal(fence_.Get(), current_fence_value));
 
 	frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
-	uint64_t& next_fence_value = fence_values_[frame_index_];
-	if (fence_->GetCompletedValue() < next_fence_value)
+
+	const bool need_to_wait = fence_->GetCompletedValue() < current_fence_value;
+	if (need_to_wait)
 	{
-		ThrowIfFailed(fence_->SetEventOnCompletion(next_fence_value, fence_event_));
+		ThrowIfFailed(fence_->SetEventOnCompletion(current_fence_value, fence_event_));
+	}
+	return need_to_wait;
+}
+
+void BaseRenderer::EndMoveToNextFrame(bool need_to_wait)
+{
+	if (need_to_wait)
+	{
+		STAT_TIME_SCOPE(renderer, wait_for_gpu);
 		WaitForSingleObjectEx(fence_event_, INFINITE, FALSE);
 	}
 
-	next_fence_value = current_fence_value + 1;
+	fence_values_[frame_index_]++;
 }
 
 SyncGPU BaseRenderer::PrevFrameSync()

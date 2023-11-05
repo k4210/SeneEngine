@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "statistics_system.h"
-
+#if DO_STAT
 namespace Statistics
 {
 	IF_DO_LOG(LogCategory stat_log("stat");)
@@ -35,14 +35,15 @@ namespace Statistics
 	void System::ReceiveStat(uint32 index, Stat::EMode mode, double value)
 	{
 		auto& var = buffers_.GetActive()[index];
+		var.counter++;
 		switch (mode)
 		{
 		case Stat::EMode::Accumulate:
 		case Stat::EMode::PerFrame:
-			var += value;
+			var.value += value;
 			break;
 		case Stat::EMode::Override:
-			var = value;
+			var.value = value;
 			break;
 		}
 	}
@@ -51,7 +52,7 @@ namespace Statistics
 	{
 		if (const CommonMsg::Frame* frame = std::get_if<CommonMsg::Frame>(&msg))
 		{
-			LOG(stat_log, ELogPriority::Display, "frame {}", frame->delta);
+			LOG(stat_log, ELog::Display, "frame {}", Utils::ToMiliseconds(frame->delta));
 
 			buffers_.FlipActive();
 
@@ -60,12 +61,14 @@ namespace Statistics
 			for (uint32 idx = 0; idx < details.size(); idx++)
 			{
 				const Stat::Details& detail = details[idx];
-				const double value = full_bufff[idx].load(std::memory_order_relaxed);
-				LOG(stat_log, ELogPriority::Display, "{}:{} {}", detail.group, detail.name, value);
+				const double value = full_bufff[idx].value.load(std::memory_order_relaxed);
+				const uint32 counter = full_bufff[idx].counter.load(std::memory_order_relaxed);
+				LOG(stat_log, ELog::Display, "{}:{} {} / {}", detail.group, detail.name, value, counter);
 
 				if (detail.mode == Stat::EMode::PerFrame)
 				{
-					full_bufff[idx].store(0.0f, std::memory_order_relaxed);
+					full_bufff[idx].value.store(0.0f, std::memory_order_relaxed);
+					full_bufff[idx].counter.store(0, std::memory_order_relaxed);
 				}
 			}
 		}
@@ -78,3 +81,4 @@ namespace Statistics
 	{}
 
 }
+#endif

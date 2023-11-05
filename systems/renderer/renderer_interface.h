@@ -4,6 +4,8 @@
 #include "graphics/gpu_containers.h"
 #include "primitives/mesh_data.h"
 
+class BaseApp;
+
 namespace Const
 {
 	constexpr uint32_t kFrameCount = 2;
@@ -46,6 +48,6 @@ namespace IRenderer
 
 	const RendererCommon& GetRendererCommon();
 	void EnqueueMsg(RT_MSG&&);
-	IBaseSystem* CreateSystem(HWND hWnd, uint32_t width, uint32_t height);
+	IBaseSystem* CreateSystem(HWND hWnd, uint32_t width, uint32_t height, BaseApp& app);
 };
 

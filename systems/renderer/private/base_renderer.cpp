@@ -140,7 +140,16 @@ void BaseRenderer::SetupFullscreen(const std::optional<bool> forced_mode)
 
 void BaseRenderer::WaitForGpu()
 {
-	uint64_t& fence_value = fence_values_[frame_index_];
+	for (SyncPerFrame& sync : sync_)
+	{
+		sync.Wait();
+	}
+	SyncPerFrame& sync = GetSync();
+	sync.StartSync(direct_command_queue_);
+	sync.Wait();
+
+	/*
+	uint64_t& fence_value = GetFenceValueRef();
 	ThrowIfFailed(direct_command_queue_->Signal(fence_.Get(), fence_value));
 
 	// Wait until the fence has been processed.
@@ -149,11 +158,12 @@ void BaseRenderer::WaitForGpu()
 
 	// Increment the fence value for the current frame.
 	fence_value++;
+	*/
 }
-
+/*
 bool BaseRenderer::StartMoveToNextFrame()
 {
-	const uint64_t current_fence_value = fence_values_[frame_index_];
+	uint64_t& current_fence_value = GetFenceValueRef();
 	ThrowIfFailed(direct_command_queue_->Signal(fence_.Get(), current_fence_value));
 
 	frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
@@ -163,26 +173,27 @@ bool BaseRenderer::StartMoveToNextFrame()
 	{
 		ThrowIfFailed(fence_->SetEventOnCompletion(current_fence_value, fence_event_));
 	}
+	//current_fence_value++;
 	return need_to_wait;
 }
 
-void BaseRenderer::EndMoveToNextFrame(bool need_to_wait)
+void BaseRenderer::EndMoveToNextFrame()
 {
 	if (need_to_wait)
 	{
 		STAT_TIME_SCOPE(renderer, wait_for_gpu);
 		WaitForSingleObjectEx(fence_event_, INFINITE, FALSE);
 	}
-
-	fence_values_[frame_index_]++;
+	GetFenceValueRef()++;
 }
 
 SyncGPU BaseRenderer::PrevFrameSync()
 {
-	const uint64_t current_frame_num = fence_values_[frame_index_];
+	const uint64_t current_frame_num = GetFenceValueRef();
 	assert(current_frame_num);
 	return { fence_, current_frame_num - 1 };
 }
+*/
 
 void BaseRenderer::PrepareCommonDraw(ID3D12GraphicsCommandList* command_list)
 {
@@ -223,19 +234,27 @@ void BaseRenderer::Execute(uint32_t num, ID3D12CommandList* const* comand_lists)
 void BaseRenderer::Present()
 {
 	ThrowIfFailed(swap_chain_->Present(1, 0));
+	frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
 }
 
 void BaseRenderer::ThreadInitialize()
 {
-	ThrowIfFailed(common_.device->CreateFence(fence_values_[frame_index_], D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)));
+	/*
+	uint64_t& fence_value = GetFenceValueRef();
+	ThrowIfFailed(common_.device->CreateFence(fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)));
 	NAME_D3D12_OBJECT(fence_);
-	fence_values_[frame_index_]++;
+	fence_value++;
 
 	// Create an event handle to use for frame synchronization.
 	fence_event_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 	if (fence_event_ == nullptr)
 	{
 		ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+	}
+	*/
+	for (int32 idx = 0; idx < sync_.size(); idx++)
+	{
+		sync_[idx].Initialize(common_.device, idx);
 	}
 
 	// Wait for the command list to execute; we are reusing the same command 
@@ -247,7 +266,10 @@ void BaseRenderer::ThreadInitialize()
 void BaseRenderer::ThreadCleanUp()
 {
 	WaitForGpu();
-	CloseHandle(fence_event_);
+	for (SyncPerFrame& sync : sync_)
+	{
+		sync.Close();
+	}
 }
 
 void BaseRenderer::CustomOpen()
@@ -377,7 +399,6 @@ void BaseRenderer::CustomOpen()
 
 void BaseRenderer::CustomClose()
 {
-	fence_.Reset();
 	depth_stencil_.Reset();
 	dsv_heap_.Reset();
 	for (UINT n = 0; n < Const::kFrameCount; n++)

@@ -147,6 +147,8 @@ protected:
 	Utils::TimeType time;
 	BaseApp& app;
 
+	uint32 static_buffers_frame_idx = 0;
+	uint64 static_buffers_fence_value = 0;
 public:
 	Renderer(HWND hWnd, uint32_t width, uint32_t height, BaseApp& in_app)
 		: BaseRenderer(hWnd, width, height) 
@@ -175,7 +177,12 @@ protected:
 		static_instances_ = msg.instances;
 		static_instances_in_node = msg.instances_in_node;
 		num_nodes_ = msg.num_nodes;
-		msg.promise_previous_nodes_not_used.set_value(PrevFrameSync());
+
+		const SyncPerFrame& sync = sync_[static_buffers_frame_idx];
+		msg.promise_previous_nodes_not_used.set_value(SyncGPU{ sync.fence, static_buffers_fence_value });
+
+		static_buffers_frame_idx = frame_index_;
+		static_buffers_fence_value = GetSync().fence_value;
 	}
 
 	void operator()(RT_MSG_ToogleFullScreen msg)
@@ -204,9 +211,17 @@ protected:
 		if (!meshes_buff_ || !static_nodes_ || !static_instances_ || !static_instances_in_node)
 			return;
 
+		auto& sync = GetSync();
+		{
+			STAT_TIME_SCOPE(renderer, wait_gpu);
+			sync.Wait();
+		}
+		auto& pf = GetPerFrame();
+		pf.upload_buffer.reset();
+
 		auto Draw = [&]()
 		{
-			auto& pf = GetPerFrame();
+			STAT_TIME_SCOPE(renderer, draw);
 			auto device = common_.device.Get();
 
 			//INITIAL COMMAND LIST
@@ -317,22 +332,15 @@ protected:
 		};
 		
 		Draw();
+		Present();
 
-		//PRESENT, NEXT FRAME
+		sync.StartSync(direct_command_queue_);
 		{
-			auto& pf = GetPerFrame();
-			Present();
-			const bool need_to_wait = StartMoveToNextFrame();
-			{
-				STAT_TIME_SCOPE(renderer, send_message);
-				const auto new_time = Utils::GetTime();
-				const Utils::TimeSpan delta = new_time - time;
-				app.ReceiveMsgToBroadcast(CommonMsg::Frame{ frame_counter, delta});
-				time = new_time;
-				frame_counter++;
-			}
-			EndMoveToNextFrame(need_to_wait);
-			pf.upload_buffer.reset();
+			const auto new_time = Utils::GetTime();
+			const Utils::TimeSpan delta = new_time - time;
+			app.ReceiveMsgToBroadcast(CommonMsg::Frame{ frame_counter, delta });
+			time = new_time;
+			frame_counter++;
 		}
 	}
 

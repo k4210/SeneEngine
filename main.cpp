@@ -11,7 +11,8 @@
 #include "systems/statistics/statistics_system.h"
 
 IF_DO_LOG(LogCategory main_log("main");)
-IF_DO_STAT(static Stat::Id stat_app_tick("app", "ticks_per_frame", Stat::EMode::PerFrame));
+//IF_DO_STAT(static Stat::Id stat_app_tick("app", "ticks_per_frame", Stat::EMode::PerFrame));
+//IF_DO_STAT(static Stat::Id stat_app_msg("app", "pending_msg", Stat::EMode::Override));
 
 int run_application(BaseApp& pSample, UINT width, UINT height);
 
@@ -24,17 +25,18 @@ protected:
 	void OnInit(HWND hWnd, UINT width, UINT height) override;
 	void Tick() override 
 	{ 
-		IF_DO_STAT(stat_app_tick.PassValue(1));
+		//IF_DO_STAT(stat_app_tick.PassValue(1));
 		while (auto opt_msg = msg_queue_.Pop())
 		{
-			STAT_TIME_SCOPE(app, broadcast);
+			//IF_DO_STAT(stat_app_msg.PassValue(msg_queue_.Num()));
+			//STAT_TIME_SCOPE(app, broadcast);
 			for (auto& system : systems_)
 			{
 				assert(system);
-				system->HandleCommonMessage(*opt_msg);
+				system->ReceiveCommonMessage(*opt_msg);
 			}
 		}
-		std::this_thread::yield(); 
+		std::this_thread::yield();
 	}
 	void OnDestroy() override;
 	void ToggleFullscreenWindow() override;

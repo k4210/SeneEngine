@@ -5,6 +5,62 @@
 using Microsoft::WRL::ComPtr;
 using namespace IRenderer;
 
+struct SyncPerFrame
+{
+	ComPtr<ID3D12Fence> fence;
+	HANDLE fence_event = 0;
+	uint64_t fence_value = 0;
+	bool need_to_wait = false;
+
+	void Initialize(const ComPtr<ID3D12Device>& device, uint32 index)
+	{
+		assert(!need_to_wait);
+		ThrowIfFailed(device->CreateFence(fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)));
+		SetNameIndexed(fence.Get(), L"fence", index);
+		fence_value++;
+
+		// Create an event handle to use for frame synchronization.
+		fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+		if (fence_event == nullptr)
+		{
+			ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+		}
+	}
+
+	void StartSync(const ComPtr<ID3D12CommandQueue>& direct_command_queue)
+	{
+		assert(!need_to_wait);
+		ThrowIfFailed(direct_command_queue->Signal(fence.Get(), fence_value));
+
+		need_to_wait = fence->GetCompletedValue() < fence_value;
+		if (need_to_wait)
+		{
+			ThrowIfFailed(fence->SetEventOnCompletion(fence_value, fence_event));
+		}
+		else
+		{
+			fence_value++;
+		}
+	}
+
+	void Wait()
+	{
+		if (need_to_wait)
+		{
+			WaitForSingleObjectEx(fence_event, INFINITE, FALSE);
+			fence_value++;
+			need_to_wait = false;
+		}
+	}
+
+	void Close()
+	{
+		assert(!need_to_wait);
+		CloseHandle(fence_event);
+		fence.Reset();
+	}
+};
+
 class BaseRenderer : public BaseSystemImpl<RT_MSG>
 {
 protected:
@@ -32,10 +88,13 @@ protected:
 	HWND hwnd_ = nullptr;
 	RECT window_rect_ = { 0, 0, 1280, 720 };
 
+	std::array<SyncPerFrame, Const::kFrameCount> sync_;
 	uint32_t frame_index_ = 0;
-	HANDLE fence_event_ = 0;
-	ComPtr<ID3D12Fence> fence_;
-	uint64_t fence_values_[Const::kFrameCount] = { 0 };
+
+	SyncPerFrame& GetSync()
+	{
+		return sync_[frame_index_];
+	}
 
 public:
 	BaseRenderer(HWND hWnd, uint32_t width, uint32_t height);
@@ -50,10 +109,9 @@ protected:
 
 	void WaitForGpu();
 
-	bool StartMoveToNextFrame();
-	void EndMoveToNextFrame(bool need_to_wait);
-
-	SyncGPU PrevFrameSync();
+	//bool StartMoveToNextFrame();
+	//void EndMoveToNextFrame(bool need_to_wait);
+	//SyncGPU PrevFrameSync();
 
 	ID3D12Resource* GetRTResource() const
 	{

@@ -43,7 +43,7 @@ namespace Utils
 
 	using Microsecond = std::chrono::microseconds;
 	using TimeSpan = std::chrono::nanoseconds;
-	inline auto GetTime() { return std::chrono::steady_clock::now(); }
+	inline auto GetTime() { return std::chrono::high_resolution_clock::now(); }
 	using TimeType = decltype(GetTime());
 	inline double ToMiliseconds(TimeSpan duration)
 	{

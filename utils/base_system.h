@@ -14,7 +14,7 @@ public:
 	virtual void Destroy() = 0;
 	virtual bool IsRunning() const = 0;
 
-	virtual void HandleCommonMessage(CommonMsg::Message) = 0;
+	virtual void ReceiveCommonMessage(CommonMsg::Message) = 0;
 
 	virtual std::string_view GetName() const = 0;
 	virtual ~IBaseSystem() = default;
@@ -43,7 +43,7 @@ protected:
 
 	virtual std::optional<Utils::TimeSpan> GetMessageBudget() const { return {}; }
 
-	virtual void HandleCommonMessage(CommonMsg::Message) {}
+	virtual void ReceiveCommonMessage(CommonMsg::Message) {}
 
 	void HandleMessages()
 	{

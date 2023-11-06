@@ -48,7 +48,7 @@ namespace Statistics
 		}
 	}
 
-	void System::HandleCommonMessage(const CommonMsg::Message msg)
+	void System::operator()(CommonMsg::Message msg)
 	{
 		if (const CommonMsg::Frame* frame = std::get_if<CommonMsg::Frame>(&msg))
 		{

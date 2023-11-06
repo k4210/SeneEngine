@@ -16,7 +16,7 @@ namespace Statistics
 	{
 		std::string group_name;
 	};
-	using Message = std::variant<StartDisplay, StopDisplay>;
+	using Message = std::variant<StartDisplay, StopDisplay, CommonMsg::Message>;
 
 	class System : public BaseSystemImpl<Message>
 	{
@@ -25,7 +25,10 @@ namespace Statistics
 
 		void ThreadCleanUp() override;
 
-		void HandleCommonMessage(CommonMsg::Message) override;
+		void ReceiveCommonMessage(CommonMsg::Message msg) override
+		{
+			EnqueueMsg(Message{ msg });
+		}
 
 		void HandleSingleMessage(Message& msg) override { std::visit([&](auto&& arg) { (*this)(std::move(arg)); }, msg); }
 
@@ -36,6 +39,8 @@ namespace Statistics
 		// Thread safe
 		void ReceiveStat(uint32 index, Stat::EMode mode, double value);
 	protected:
+		void System::operator()(CommonMsg::Message msg);
+
 		void operator()(StartDisplay msg);
 
 		void operator()(StopDisplay msg);

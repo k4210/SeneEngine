@@ -13,8 +13,8 @@
 
 #include "stdafx.h"
 #include "root_signature.h"
-#include "../hash.h"
-#include "../base_app_helper.h"
+#include "common/hash.h"
+#include "utils/base_app_helper.h"
 #include <map>
 #include <thread>
 #include <mutex>
@@ -98,8 +98,8 @@ ID3D12RootSignature* RootSignature::Finalize(ID3D12Device* device, D3D_ROOT_SIGN
     m_DescriptorTableBitMap = 0;
     m_SamplerTableBitMap = 0;
 
-    size_t HashCode = Utility::HashState(&RootDesc.Desc_1_1.Flags);
-    HashCode = Utility::HashState( RootDesc.Desc_1_1.pStaticSamplers, m_NumSamplers, HashCode );
+    size_t HashCode = Utils::HashState(&RootDesc.Desc_1_1.Flags);
+    HashCode = Utils::HashState( RootDesc.Desc_1_1.pStaticSamplers, m_NumSamplers, HashCode );
 
     for (UINT Param = 0; Param < m_NumParameters; ++Param)
     {
@@ -110,7 +110,7 @@ ID3D12RootSignature* RootSignature::Finalize(ID3D12Device* device, D3D_ROOT_SIGN
         {
             assert(RootParam.DescriptorTable.pDescriptorRanges != nullptr);
 
-            HashCode = Utility::HashState( RootParam.DescriptorTable.pDescriptorRanges,
+            HashCode = Utils::HashState( RootParam.DescriptorTable.pDescriptorRanges,
                 RootParam.DescriptorTable.NumDescriptorRanges, HashCode );
 
             // We keep track of sampler descriptor tables separately from CBV_SRV_UAV descriptor tables
@@ -123,7 +123,7 @@ ID3D12RootSignature* RootSignature::Finalize(ID3D12Device* device, D3D_ROOT_SIGN
                 m_DescriptorTableSize[Param] += RootParam.DescriptorTable.pDescriptorRanges[TableRange].NumDescriptors;
         }
         else
-            HashCode = Utility::HashState( &RootParam, 1, HashCode );
+            HashCode = Utils::HashState( &RootParam, 1, HashCode );
     }
 
     ID3D12RootSignature** RSRef = nullptr;

@@ -13,8 +13,8 @@
 #include "stdafx.h"
 #include "pipeline_state.h"
 #include "root_signature.h"
-#include "../hash.h"
-#include "../base_app_helper.h"
+#include "common/hash.h"
+#include "utils/base_app_helper.h"
 #include <map>
 #include <thread>
 #include <mutex>
@@ -111,8 +111,8 @@ ID3D12PipelineState* GraphicsPSO::Finalize(ID3D12Device* device)
     assert(m_PSODesc.pRootSignature != nullptr);
 
     m_PSODesc.InputLayout.pInputElementDescs = nullptr;
-    size_t HashCode = Utility::HashState(&m_PSODesc);
-    HashCode = Utility::HashState(m_InputLayouts.get(), m_PSODesc.InputLayout.NumElements, HashCode);
+    size_t HashCode = Utils::HashState(&m_PSODesc);
+    HashCode = Utils::HashState(m_InputLayouts.get(), m_PSODesc.InputLayout.NumElements, HashCode);
     m_PSODesc.InputLayout.pInputElementDescs = m_InputLayouts.get();
 
     ID3D12PipelineState** PSORef = nullptr;
@@ -153,7 +153,7 @@ ID3D12PipelineState* ComputePSO::Finalize(ID3D12Device* device)
     m_PSODesc.pRootSignature = m_RootSignature.Get();
     assert(m_PSODesc.pRootSignature != nullptr);
 
-    size_t HashCode = Utility::HashState(&m_PSODesc);
+    size_t HashCode = Utils::HashState(&m_PSODesc);
 
     ID3D12PipelineState** PSORef = nullptr;
     bool firstCompile = false;

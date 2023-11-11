@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "../renderer_interface.h"
 #include "base_app_helper.h"
-#include "base_app.h"
 #include "primitives/mesh_data.h"
 #include "graphics/command_signature.h"
 #include "graphics/root_signature.h"
@@ -10,6 +9,10 @@
 #include <cstddef>
 
 #include "base_renderer.h"
+
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
+#include "backends/imgui_impl_dx12.h"
 
 #ifdef NDEBUG
 #include "compiled_shaders/release/filter_nodes_frustum_cs.h"
@@ -135,6 +138,7 @@ protected:
 
 	std::array<PerFrame, Const::kFrameCount> per_frame_;
 
+	DescriptorHeapElementRef imgui_font_;
 	DescriptorHeapElementRef meshes_buff_;
 	DescriptorHeapElementRef static_nodes_;
 	DescriptorHeapElementRef static_instances_;
@@ -143,22 +147,17 @@ protected:
 
 	std::vector<std::shared_ptr<Mesh>> to_register_;
 
-	uint64 frame_counter = 0;
-	Utils::TimeType time;
-	BaseApp& app;
-
 	uint32 static_buffers_frame_idx = 0;
 	uint64 static_buffers_fence_value = 0;
 public:
 	Renderer(HWND hWnd, uint32_t width, uint32_t height, BaseApp& in_app)
-		: BaseRenderer(hWnd, width, height) 
+		: BaseRenderer(hWnd, width, height, in_app)
 		, filter_nodes_frustum_(	Const::kStaticNodesCapacity			, E_UAV::Temp1		, E_SRV::Invalid)
 		, filter_nodes_depth_(		Const::kStaticNodesCapacity			, E_UAV::Temp2		, E_SRV::Temp1)
 		, extract_instances_(		Const::kStaticNodesCapacity			, E_UAV::Temp1		, E_SRV::Temp2)
 		, filter_inst_frustum_(		Const::kStaticInstancesCapacity		, E_UAV::Temp2		, E_SRV::Temp1)
 		, filter_inst_depth_(		Const::kStaticInstancesCapacity		, E_UAV::Temp1		, E_SRV::Temp2)
 		, generate_draw_commands_(	Const::kStaticInstancesCapacity		, E_UAV::Commands	, E_SRV::Temp1)
-		, app(in_app)
 	{}
 
 protected:
@@ -204,144 +203,153 @@ protected:
 
 	void HandleSingleMessage(RT_MSG& msg) override { std::visit([&](auto&& arg) { (*this)(std::move(arg)); }, msg); }
 
-	void Tick() override
+	void Draw() override
 	{
-		STAT_TIME_SCOPE(renderer, tick);
-
 		if (!meshes_buff_ || !static_nodes_ || !static_instances_ || !static_instances_in_node)
 			return;
 
-		auto& sync = GetSync();
-		{
-			STAT_TIME_SCOPE(renderer, wait_gpu);
-			sync.Wait();
-		}
+		STAT_TIME_SCOPE(renderer, draw);
+
+		ImGui_ImplDX12_NewFrame();
+		ImGui::NewFrame();
+		ImGui::ShowDemoWindow(); // Show demo window! :)
+
 		auto& pf = GetPerFrame();
 		pf.upload_buffer.reset();
 
-		auto Draw = [&]()
+		auto device = common_.device.Get();
+
+		//INITIAL COMMAND LIST
 		{
-			STAT_TIME_SCOPE(renderer, draw);
-			auto device = common_.device.Get();
-
-			//INITIAL COMMAND LIST
-			{
-				ID3D12CommandAllocator* const allocator = GetActiveAllocator();
-				ThrowIfFailed(allocator->Reset());
-				ThrowIfFailed(command_list_->Reset(allocator, nullptr));
-				pf.tm.set_command_list(command_list_);
-			}
-
-			//REGISTER MESHES
-			{
-				for (auto& mesh : to_register_)
-				{
-					assert(mesh);
-					for (uint32_t idx = 0; idx < mesh->get_lod_num(); idx++)
-					{
-						pf.tm.insert(mesh->lod[idx].index_buffer.transition_barrier(D3D12_RESOURCE_STATE_INDEX_BUFFER));
-						pf.tm.insert(mesh->lod[idx].vertex_buffer.transition_barrier(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-					}
-				}
-				to_register_.clear();
-			}
-
-			//PREPARE BUFFERS AND RT
-			{
-				pf.tm.insert(CD3DX12_RESOURCE_BARRIER::Transition(GetRTResource(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
-				pf.tm.wait_for(pf.scene_manager_params.get_resource());
-				SceneManagerParamsGPU params;
-				const bool params_ok = FillGpuContainer<SceneManagerParamsGPU, ConstantBuffer>(
-					pf.scene_manager_params, &params, 1, command_list_.Get(), pf.upload_buffer);
-				assert(params_ok);
-				pf.tm.wait_for(pf.scene_manager_params.transition_barrier(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
-			}
-
-			//HEAP
-			{
-				pf.buffers_heap.clear(64);
-				CopyDescriptor(device, pf.buffers_heap, static_nodes_, 0);
-				CopyDescriptor(device, pf.buffers_heap, static_instances_, 1);
-				CopyDescriptor(device, pf.buffers_heap, static_instances_in_node, 2);
-				CopyDescriptor(device, pf.buffers_heap, meshes_buff_, 3);
-
-				ID3D12DescriptorHeap* heap_ptr = pf.buffers_heap.get_heap();
-				command_list_->SetDescriptorHeaps(1, &heap_ptr);
-			}
-			uint32_t buffer_heap_offset = 4;
-
-			auto execute = [&](SceneManagerPass& pass)
-			{
-				UavCountedBuffer& uav = pf.GetUav(pass.uav);
-				UavCountedBuffer* srv = (pass.srv != E_SRV::Invalid) ? &pf.GetSrv(pass.srv) : nullptr;
-				if (uav.get_state() != D3D12_RESOURCE_STATE_COPY_DEST)	pf.tm.insert(uav.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
-				if (srv)												pf.tm.insert(srv->transition_barrier(D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-				pf.tm.start();
-				pf.tm.wait_for(uav.get_resource());
-				uav.reset_counter(command_list_.Get(), reset_counter_src_.get_resource(), 0);
-				pf.tm.wait_for(uav.transition_barrier(D3D12_RESOURCE_STATE_UNORDERED_ACCESS), srv ? srv->get_resource() : nullptr);
-
-				uint32_t local_heap_offset = buffer_heap_offset;
-				CopyDescriptor(device, pf.buffers_heap, uav.get_uav_handle(), local_heap_offset++);
-				if (srv)
-				{
-					CopyDescriptor(device, pf.buffers_heap, srv->get_counter_srv_handle(), local_heap_offset++);
-					CopyDescriptor(device, pf.buffers_heap, srv->get_srv_handle(), local_heap_offset++);
-				}
-
-				command_list_->SetComputeRootSignature(pass.root_signature_.Get());
-				command_list_->SetComputeRootConstantBufferView(0, pf.scene_manager_params.get_resource()->GetGPUVirtualAddress());
-				const uint32_t static_buffers_offset = 0;
-				command_list_->SetComputeRootDescriptorTable(1, pf.buffers_heap.get_gpu_handle(static_buffers_offset));
-				command_list_->SetComputeRootDescriptorTable(2, pf.buffers_heap.get_gpu_handle(buffer_heap_offset));
-				buffer_heap_offset = local_heap_offset;
-
-				command_list_->SetPipelineState(pass.pipeline_state_.Get());
-				command_list_->Dispatch(pass.max_dispatch / pass.k_threads_x, 1, 1);
-			};
-			execute(filter_nodes_frustum_);
-			execute(filter_nodes_depth_);
-			execute(extract_instances_);
-			execute(filter_inst_frustum_);
-			execute(filter_inst_depth_);
-			execute(generate_draw_commands_);
-
-			//DRAW
-			{
-				pf.tm.insert(pf.indirect_draw_commands.transition_barrier(D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT));
-				pf.tm.start();
-				command_list_->SetPipelineState(render_state_.Get());
-				command_list_->SetGraphicsRootSignature(draw_root_signature_.Get());
-				pf.tm.wait_for_all_started();
-				PrepareCommonDraw(command_list_.Get());
-				command_list_->ExecuteIndirect(command_signature_.Get(), pf.indirect_draw_commands.elements_num()
-					, pf.indirect_draw_commands.get_resource(), 0
-					, pf.indirect_draw_commands.get_resource(), pf.indirect_draw_commands.get_counter_offset());
-			}
-
-			//EXECUTE
-			{
-				pf.tm.insert(pf.scene_manager_params.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
-				pf.tm.insert(pf.indirect_draw_commands.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
-				pf.tm.insert(pf.temp_buffer_1.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
-				pf.tm.insert(pf.temp_buffer_2.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
-				pf.tm.wait_for(CD3DX12_RESOURCE_BARRIER::Transition(GetRTResource(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
-				ThrowIfFailed(command_list_->Close());
-				Execute(command_list_.Get());
-			}
-		};
-		
-		Draw();
-		Present();
-
-		sync.StartSync(direct_command_queue_);
-		{
-			const auto new_time = Utils::GetTime();
-			const Utils::TimeSpan delta = new_time - time;
-			app.ReceiveMsgToBroadcast(CommonMsg::Frame{ frame_counter, delta });
-			time = new_time;
-			frame_counter++;
+			ID3D12CommandAllocator* const allocator = GetActiveAllocator();
+			ThrowIfFailed(allocator->Reset());
+			ThrowIfFailed(command_list_->Reset(allocator, nullptr));
+			pf.tm.set_command_list(command_list_);
 		}
+
+		//REGISTER MESHES
+		{
+			for (auto& mesh : to_register_)
+			{
+				assert(mesh);
+				for (uint32_t idx = 0; idx < mesh->get_lod_num(); idx++)
+				{
+					pf.tm.insert(mesh->lod[idx].index_buffer.transition_barrier(D3D12_RESOURCE_STATE_INDEX_BUFFER));
+					pf.tm.insert(mesh->lod[idx].vertex_buffer.transition_barrier(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+				}
+			}
+			to_register_.clear();
+		}
+
+		//PREPARE BUFFERS AND RT
+		{
+			pf.tm.insert(CD3DX12_RESOURCE_BARRIER::Transition(GetRTResource(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+			pf.tm.wait_for(pf.scene_manager_params.get_resource());
+			SceneManagerParamsGPU params;
+			const bool params_ok = FillGpuContainer<SceneManagerParamsGPU, ConstantBuffer>(
+				pf.scene_manager_params, &params, 1, command_list_.Get(), pf.upload_buffer);
+			assert(params_ok);
+			pf.tm.wait_for(pf.scene_manager_params.transition_barrier(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
+		}
+
+		//HEAP
+		{
+			pf.buffers_heap.clear(64);
+			CopyDescriptor(device, pf.buffers_heap, static_nodes_, 0);
+			CopyDescriptor(device, pf.buffers_heap, static_instances_, 1);
+			CopyDescriptor(device, pf.buffers_heap, static_instances_in_node, 2);
+			CopyDescriptor(device, pf.buffers_heap, meshes_buff_, 3);
+
+			ID3D12DescriptorHeap* heap_ptr = pf.buffers_heap.get_heap();
+			command_list_->SetDescriptorHeaps(1, &heap_ptr);
+		}
+		uint32_t buffer_heap_offset = 4;
+
+		auto execute = [&](SceneManagerPass& pass)
+		{
+			UavCountedBuffer& uav = pf.GetUav(pass.uav);
+			UavCountedBuffer* srv = (pass.srv != E_SRV::Invalid) ? &pf.GetSrv(pass.srv) : nullptr;
+			if (uav.get_state() != D3D12_RESOURCE_STATE_COPY_DEST)	pf.tm.insert(uav.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
+			if (srv)												pf.tm.insert(srv->transition_barrier(D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+			pf.tm.start();
+			pf.tm.wait_for(uav.get_resource());
+			uav.reset_counter(command_list_.Get(), reset_counter_src_.get_resource(), 0);
+			pf.tm.wait_for(uav.transition_barrier(D3D12_RESOURCE_STATE_UNORDERED_ACCESS), srv ? srv->get_resource() : nullptr);
+
+			uint32_t local_heap_offset = buffer_heap_offset;
+			CopyDescriptor(device, pf.buffers_heap, uav.get_uav_handle(), local_heap_offset++);
+			if (srv)
+			{
+				CopyDescriptor(device, pf.buffers_heap, srv->get_counter_srv_handle(), local_heap_offset++);
+				CopyDescriptor(device, pf.buffers_heap, srv->get_srv_handle(), local_heap_offset++);
+			}
+
+			command_list_->SetComputeRootSignature(pass.root_signature_.Get());
+			command_list_->SetComputeRootConstantBufferView(0, pf.scene_manager_params.get_resource()->GetGPUVirtualAddress());
+			const uint32_t static_buffers_offset = 0;
+			command_list_->SetComputeRootDescriptorTable(1, pf.buffers_heap.get_gpu_handle(static_buffers_offset));
+			command_list_->SetComputeRootDescriptorTable(2, pf.buffers_heap.get_gpu_handle(buffer_heap_offset));
+			buffer_heap_offset = local_heap_offset;
+
+			command_list_->SetPipelineState(pass.pipeline_state_.Get());
+			command_list_->Dispatch(pass.max_dispatch / pass.k_threads_x, 1, 1);
+		};
+		execute(filter_nodes_frustum_);
+		execute(filter_nodes_depth_);
+		execute(extract_instances_);
+		execute(filter_inst_frustum_);
+		execute(filter_inst_depth_);
+		execute(generate_draw_commands_);
+
+		//DRAW
+		{
+			pf.tm.insert(pf.indirect_draw_commands.transition_barrier(D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT));
+			pf.tm.start();
+			command_list_->SetPipelineState(render_state_.Get());
+			command_list_->SetGraphicsRootSignature(draw_root_signature_.Get());
+			pf.tm.wait_for_all_started();
+			PrepareCommonDraw(command_list_.Get());
+			command_list_->ExecuteIndirect(command_signature_.Get(), pf.indirect_draw_commands.elements_num()
+				, pf.indirect_draw_commands.get_resource(), 0
+				, pf.indirect_draw_commands.get_resource(), pf.indirect_draw_commands.get_counter_offset());
+		}
+
+		ImGui::Render();
+		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), command_list_.Get());
+
+		//EXECUTE
+		{
+			pf.tm.insert(pf.scene_manager_params.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
+			pf.tm.insert(pf.indirect_draw_commands.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
+			pf.tm.insert(pf.temp_buffer_1.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
+			pf.tm.insert(pf.temp_buffer_2.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
+			pf.tm.wait_for(CD3DX12_RESOURCE_BARRIER::Transition(GetRTResource(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+			ThrowIfFailed(command_list_->Close());
+			Execute(command_list_.Get());
+		}
+	}
+
+	void CustomOpen() override
+	{
+		BaseRenderer::CustomOpen();
+
+		// Setup Dear ImGui context
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+		// Setup Platform/Renderer backends
+		ImGui_ImplWin32_Init(hwnd_);
+	}
+
+	void CustomClose() override
+	{
+		ImGui_ImplWin32_Shutdown();
+		ImGui::DestroyContext();
+
+		BaseRenderer::CustomClose();
 	}
 
 	void InitializeDrawPipeline()
@@ -444,6 +452,12 @@ protected:
 		const uint32_t views_per_frame = 16;
 		persistent_descriptor_heap_.create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, views_per_frame * Const::kFrameCount);
 
+		{
+			imgui_font_.initialize(persistent_descriptor_heap_);
+			ImGui_ImplDX12_Init(common_.device.Get(), Const::kFrameCount, DXGI_FORMAT_R8G8B8A8_UNORM,
+				persistent_descriptor_heap_.get_heap(), imgui_font_.get_cpu_handle(), imgui_font_.get_gpu_handle());
+		}
+
 		ThrowIfFailed(common_.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, GetActiveAllocator(), nullptr, IID_PPV_ARGS(&command_list_)));
 		NAME_D3D12_OBJECT(command_list_);
 
@@ -479,8 +493,6 @@ protected:
 		{
 			pf.upload_buffer.reset();
 		}
-
-		time = Utils::GetTime();
 	}
 
 	void ThreadCleanUp() override
@@ -508,6 +520,9 @@ protected:
 			pf.temp_buffer_2.destroy();
 			pf.tm.clear();
 		}
+
+		ImGui_ImplDX12_Shutdown();
+		imgui_font_.release();
 		persistent_descriptor_heap_.destroy();
 		reset_counter_src_.destroy();
 	}

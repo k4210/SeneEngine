@@ -26,6 +26,7 @@ uint32_t DescriptorHeap::allocate()
 		*found = true;
 		return static_cast<uint32_t>(std::distance(taken_slots_.begin(), found));
 	}
+	assert(false);
 	return Const::kInvalid32;
 }
 

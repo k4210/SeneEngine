@@ -2,6 +2,56 @@
 #include "base_renderer.h"
 #include "stat/stat.h"
 
+void SyncPerFrame::Initialize(const ComPtr<ID3D12Device>& device, uint32 index)
+{
+	assert(!need_to_wait);
+	ThrowIfFailed(device->CreateFence(fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)));
+	SetNameIndexed(fence.Get(), L"fence", index);
+	fence_value++;
+
+	// Create an event handle to use for frame synchronization.
+	fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	if (fence_event == nullptr)
+	{
+		ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+	}
+}
+
+void SyncPerFrame::StartSync(const ComPtr<ID3D12CommandQueue>& direct_command_queue)
+{
+	STAT_TIME_SCOPE(renderer, sync_start);
+	assert(!need_to_wait);
+	ThrowIfFailed(direct_command_queue->Signal(fence.Get(), fence_value));
+
+	need_to_wait = fence->GetCompletedValue() < fence_value;
+	if (need_to_wait)
+	{
+		ThrowIfFailed(fence->SetEventOnCompletion(fence_value, fence_event));
+	}
+	else
+	{
+		fence_value++;
+	}
+}
+
+void SyncPerFrame::Wait()
+{
+	if (need_to_wait)
+	{
+		STAT_TIME_SCOPE(renderer, sync_wait_gpu);
+		WaitForSingleObjectEx(fence_event, INFINITE, FALSE);
+		fence_value++;
+		need_to_wait = false;
+	}
+}
+
+void SyncPerFrame::Close()
+{
+	assert(!need_to_wait);
+	CloseHandle(fence_event);
+	fence.Reset();
+}
+
 static BaseRenderer* renderer_inst = nullptr;
 
 const RendererCommon& BaseRenderer::GetCommon()
@@ -16,14 +66,11 @@ void BaseRenderer::StaticEnqueueMsg(RT_MSG&& msg)
 	renderer_inst->EnqueueMsg(std::forward<RT_MSG>(msg));
 }
 
-BaseRenderer::BaseRenderer(HWND hWnd, uint32_t width, uint32_t height)
+BaseRenderer::BaseRenderer(HWND hWnd, uint32_t width, uint32_t height, BaseApp& app)
+	: hwnd_(hWnd), width_(width), height_(height), app_(app)
 {
 	assert(!renderer_inst);
 	renderer_inst = this;
-
-	hwnd_ = hWnd;
-	width_ = width;
-	height_ = height;
 	viewport_ = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
 	scissor_rect_ = CD3DX12_RECT(0, 0, static_cast<LONG>(width), static_cast<LONG>(height));
 }
@@ -147,53 +194,29 @@ void BaseRenderer::WaitForGpu()
 	SyncPerFrame& sync = GetSync();
 	sync.StartSync(direct_command_queue_);
 	sync.Wait();
-
-	/*
-	uint64_t& fence_value = GetFenceValueRef();
-	ThrowIfFailed(direct_command_queue_->Signal(fence_.Get(), fence_value));
-
-	// Wait until the fence has been processed.
-	ThrowIfFailed(fence_->SetEventOnCompletion(fence_value, fence_event_));
-	WaitForSingleObjectEx(fence_event_, INFINITE, FALSE);
-
-	// Increment the fence value for the current frame.
-	fence_value++;
-	*/
 }
-/*
-bool BaseRenderer::StartMoveToNextFrame()
+
+void BaseRenderer::Tick()
 {
-	uint64_t& current_fence_value = GetFenceValueRef();
-	ThrowIfFailed(direct_command_queue_->Signal(fence_.Get(), current_fence_value));
+	STAT_TIME_SCOPE(renderer, tick);
 
-	frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
+	auto& sync = GetSync();
+	sync.Wait();
 
-	const bool need_to_wait = fence_->GetCompletedValue() < current_fence_value;
-	if (need_to_wait)
+	Draw();
+	Present();
+
+	sync.StartSync(direct_command_queue_);
+
 	{
-		ThrowIfFailed(fence_->SetEventOnCompletion(current_fence_value, fence_event_));
+		STAT_TIME_SCOPE(renderer, tick_broadcast);
+		const auto new_time = Utils::GetTime();
+		const Utils::TimeSpan delta = new_time - time_;
+		app_.ReceiveMsgToBroadcast(CommonMsg::Frame{ frame_counter, delta });
+		time_ = new_time;
+		frame_counter++;
 	}
-	//current_fence_value++;
-	return need_to_wait;
 }
-
-void BaseRenderer::EndMoveToNextFrame()
-{
-	if (need_to_wait)
-	{
-		STAT_TIME_SCOPE(renderer, wait_for_gpu);
-		WaitForSingleObjectEx(fence_event_, INFINITE, FALSE);
-	}
-	GetFenceValueRef()++;
-}
-
-SyncGPU BaseRenderer::PrevFrameSync()
-{
-	const uint64_t current_frame_num = GetFenceValueRef();
-	assert(current_frame_num);
-	return { fence_, current_frame_num - 1 };
-}
-*/
 
 void BaseRenderer::PrepareCommonDraw(ID3D12GraphicsCommandList* command_list)
 {
@@ -231,27 +254,16 @@ void BaseRenderer::Execute(uint32_t num, ID3D12CommandList* const* comand_lists)
 {
 	direct_command_queue_->ExecuteCommandLists(num, comand_lists);
 }
+
 void BaseRenderer::Present()
 {
+	STAT_TIME_SCOPE(renderer, present);
 	ThrowIfFailed(swap_chain_->Present(1, 0));
 	frame_index_ = swap_chain_->GetCurrentBackBufferIndex();
 }
 
 void BaseRenderer::ThreadInitialize()
 {
-	/*
-	uint64_t& fence_value = GetFenceValueRef();
-	ThrowIfFailed(common_.device->CreateFence(fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_)));
-	NAME_D3D12_OBJECT(fence_);
-	fence_value++;
-
-	// Create an event handle to use for frame synchronization.
-	fence_event_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-	if (fence_event_ == nullptr)
-	{
-		ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
-	}
-	*/
 	for (int32 idx = 0; idx < sync_.size(); idx++)
 	{
 		sync_[idx].Initialize(common_.device, idx);
@@ -261,6 +273,8 @@ void BaseRenderer::ThreadInitialize()
 	// list in our main loop but for now, we just want to wait for setup to 
 	// complete before continuing.
 	WaitForGpu();
+
+	time_ = Utils::GetTime();
 }
 
 void BaseRenderer::ThreadCleanUp()

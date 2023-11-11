@@ -8,7 +8,7 @@ class BaseApp;
 
 namespace Const
 {
-	constexpr uint32_t kFrameCount = 3;
+	constexpr uint32_t kFrameCount = 2;
 	constexpr uint32_t kMeshCapacity = 4096;
 	constexpr uint32_t kStaticNodesCapacity = 4096;
 	constexpr uint32_t kStaticInstancesCapacity = kStaticNodesCapacity * kMaxInstancesPerNode;

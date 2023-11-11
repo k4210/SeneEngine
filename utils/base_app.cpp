@@ -14,6 +14,8 @@
 #include "base_app_helper.h"
 #include "stat/stat.h"
 #include "common/utils.h"
+#include "imgui.h"
+#include "backends/imgui_impl_win32.h"
 
 using namespace Microsoft::WRL;
 
@@ -92,6 +94,7 @@ int Win32Application::Run(BaseApp& app, int nCmdShow, UINT width, UINT height)
 	MSG msg = {};
 	while (true)
 	{
+		ImGui_ImplWin32_NewFrame();
 		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
@@ -107,9 +110,15 @@ int Win32Application::Run(BaseApp& app, int nCmdShow, UINT width, UINT height)
 	return -1;
 }
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 LRESULT CALLBACK Win32Application::WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	BaseApp* app = reinterpret_cast<BaseApp*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+
+	if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam))
+		return true;
+
 
 	switch (message)
 	{

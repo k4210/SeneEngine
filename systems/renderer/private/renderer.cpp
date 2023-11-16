@@ -134,6 +134,7 @@ protected:
 	SceneManagerPass generate_draw_commands_;		// temp_1	-> indirect_draw_commands
 
 	DescriptorHeap persistent_descriptor_heap_;
+	DescriptorHeap imgui_heap_;
 	CommitedBuffer reset_counter_src_;
 
 	std::array<PerFrame, Const::kFrameCount> per_frame_;
@@ -149,6 +150,8 @@ protected:
 
 	uint32 static_buffers_frame_idx = 0;
 	uint64 static_buffers_fence_value = 0;
+
+	std::function<void()> hud_func_;
 public:
 	Renderer(HWND hWnd, uint32_t width, uint32_t height, BaseApp& in_app)
 		: BaseRenderer(hWnd, width, height, in_app)
@@ -201,6 +204,11 @@ protected:
 		}
 	}
 
+	void operator()(RT_MSG_RegisterDrawHud msg)
+	{
+		hud_func_ = std::move(msg.func);
+	}
+
 	void HandleSingleMessage(RT_MSG& msg) override { std::visit([&](auto&& arg) { (*this)(std::move(arg)); }, msg); }
 
 	void Draw() override
@@ -211,8 +219,13 @@ protected:
 		STAT_TIME_SCOPE(renderer, draw);
 
 		ImGui_ImplDX12_NewFrame();
+		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
-		ImGui::ShowDemoWindow(); // Show demo window! :)
+		//ImGui::ShowDemoWindow(); // Show demo window! :)
+		if (hud_func_)
+		{
+			hud_func_();
+		}
 
 		auto& pf = GetPerFrame();
 		pf.upload_buffer.reset();
@@ -252,18 +265,19 @@ protected:
 			pf.tm.wait_for(pf.scene_manager_params.transition_barrier(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER));
 		}
 
+		uint32_t buffer_heap_offset = 0;
 		//HEAP
 		{
 			pf.buffers_heap.clear(64);
-			CopyDescriptor(device, pf.buffers_heap, static_nodes_, 0);
-			CopyDescriptor(device, pf.buffers_heap, static_instances_, 1);
-			CopyDescriptor(device, pf.buffers_heap, static_instances_in_node, 2);
-			CopyDescriptor(device, pf.buffers_heap, meshes_buff_, 3);
+			CopyDescriptor(device, pf.buffers_heap, static_nodes_, buffer_heap_offset++);
+			CopyDescriptor(device, pf.buffers_heap, static_instances_, buffer_heap_offset++);
+			CopyDescriptor(device, pf.buffers_heap, static_instances_in_node, buffer_heap_offset++);
+			CopyDescriptor(device, pf.buffers_heap, meshes_buff_, buffer_heap_offset++);
+			CopyDescriptor(device, pf.buffers_heap, imgui_font_, buffer_heap_offset++);
 
-			ID3D12DescriptorHeap* heap_ptr = pf.buffers_heap.get_heap();
-			command_list_->SetDescriptorHeaps(1, &heap_ptr);
+			ID3D12DescriptorHeap* heaps = pf.buffers_heap.get_heap();
+			command_list_->SetDescriptorHeaps(1, &heaps);
 		}
-		uint32_t buffer_heap_offset = 4;
 
 		auto execute = [&](SceneManagerPass& pass)
 		{
@@ -314,9 +328,6 @@ protected:
 				, pf.indirect_draw_commands.get_resource(), pf.indirect_draw_commands.get_counter_offset());
 		}
 
-		ImGui::Render();
-		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), command_list_.Get());
-
 		//EXECUTE
 		{
 			pf.tm.insert(pf.scene_manager_params.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
@@ -324,6 +335,10 @@ protected:
 			pf.tm.insert(pf.temp_buffer_1.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
 			pf.tm.insert(pf.temp_buffer_2.transition_barrier(D3D12_RESOURCE_STATE_COPY_DEST));
 			pf.tm.wait_for(CD3DX12_RESOURCE_BARRIER::Transition(GetRTResource(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+			
+			ImGui::Render();
+			ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), command_list_.Get());
+			
 			ThrowIfFailed(command_list_->Close());
 			Execute(command_list_.Get());
 		}
@@ -451,11 +466,13 @@ protected:
 
 		const uint32_t views_per_frame = 16;
 		persistent_descriptor_heap_.create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, views_per_frame * Const::kFrameCount);
-
+		NAME_D3D12_OBJECT(persistent_descriptor_heap_);
 		{
-			imgui_font_.initialize(persistent_descriptor_heap_);
+			imgui_heap_.create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, 5, 5);
+			NAME_D3D12_OBJECT(imgui_heap_);
+			imgui_font_.initialize(imgui_heap_, 4);
 			ImGui_ImplDX12_Init(common_.device.Get(), Const::kFrameCount, DXGI_FORMAT_R8G8B8A8_UNORM,
-				persistent_descriptor_heap_.get_heap(), imgui_font_.get_cpu_handle(), imgui_font_.get_gpu_handle());
+				imgui_heap_.get_heap(), imgui_font_.get_cpu_handle(), imgui_font_.get_gpu_handle());
 		}
 
 		ThrowIfFailed(common_.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, GetActiveAllocator(), nullptr, IID_PPV_ARGS(&command_list_)));
@@ -465,6 +482,7 @@ protected:
 		{
 			pf.upload_buffer.initialize(common_.device.Get(), 1024);
 			pf.buffers_heap.create(common_.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, 64);
+
 			Construct<IndirectCommandGPU, UavCountedBuffer>(pf.indirect_draw_commands, nullptr, Const::kStaticInstancesCapacity, common_.device.Get(), command_list_.Get()
 				, pf.upload_buffer, &persistent_descriptor_heap_, { D3D12_RESOURCE_STATE_COPY_DEST });
 			NAME_D3D12_BUFFER(pf.indirect_draw_commands);
@@ -524,6 +542,7 @@ protected:
 		ImGui_ImplDX12_Shutdown();
 		imgui_font_.release();
 		persistent_descriptor_heap_.destroy();
+		imgui_heap_.destroy();
 		reset_counter_src_.destroy();
 	}
 

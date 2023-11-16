@@ -1,5 +1,8 @@
 #include "stdafx.h"
 #include "statistics_system.h"
+#include "systems/renderer/renderer_interface.h"
+#include "imgui.h"
+
 #if DO_STAT
 namespace Statistics
 {
@@ -25,6 +28,7 @@ namespace Statistics
 	void System::ThreadInitialize()
 	{
 		Stat::Id::SetHandleStatsFunction(&PassStat);
+		enabled_.set(); // ?
 	}
 
 	void System::ThreadCleanUp()
@@ -52,33 +56,75 @@ namespace Statistics
 	{
 		if (const CommonMsg::Frame* frame = std::get_if<CommonMsg::Frame>(&msg))
 		{
-			LOG(stat_log, ELog::Display, "frame {}", Utils::ToMiliseconds(frame->delta));
-
 			buffers_.FlipActive();
+
+			std::vector<std::string> text;
 
 			auto& full_bufff = buffers_.GetInactive();
 			const std::span<const Stat::Details> details = Stat::Id::AllStatsDetails();
 			for (uint32 idx = 0; idx < details.size(); idx++)
 			{
+				if (!enabled_[idx])
+					continue;
 				const Stat::Details& detail = details[idx];
-				const double value = full_bufff[idx].value.load(std::memory_order_relaxed);
-				const uint32 counter = full_bufff[idx].counter.load(std::memory_order_relaxed);
-				LOG(stat_log, ELog::Display, "{}:{} {} / {}", detail.group, detail.name, value, counter);
+				auto& elem = full_bufff[idx];
+				const double value = elem.value.load(std::memory_order_relaxed);
+				const uint32 counter = elem.counter.load(std::memory_order_relaxed);
+
+				std::string str = std::format("{}:{} {} / {}", detail.group, detail.name, value, counter);
+				text.push_back(std::move(str));
 
 				if (detail.mode == Stat::EMode::PerFrame)
 				{
-					full_bufff[idx].value.store(0.0f, std::memory_order_relaxed);
-					full_bufff[idx].counter.store(0, std::memory_order_relaxed);
+					elem.value.store(0.0f, std::memory_order_relaxed);
+					elem.counter.store(0, std::memory_order_relaxed);
 				}
+			}
+
+			auto draw_hud = [text = std::move(text), delta_ms = Utils::ToMiliseconds(frame->delta)]()
+			{
+				ImGui::Begin("Stats");
+				ImGui::Text("frame %f ms", delta_ms);
+				for (const auto& it : text)
+				{
+					ImGui::Text(it.data());
+				}
+				if (ImGui::Button("Show Render"))
+				{
+					g_instance->EnqueueMsg(StartDisplay{ "renderer" });
+				}
+				if (ImGui::Button("Hide Render"))
+				{
+					g_instance->EnqueueMsg(StopDisplay{ "renderer" });
+				}
+				ImGui::End();
+			};
+
+			IRenderer::EnqueueMsg(IRenderer::RT_MSG_RegisterDrawHud{ std::move(draw_hud) });
+		}
+	}
+
+	void SetByGroup(std::string_view group_name, std::bitset<Stat::kMaxSupportedStats>& enabled, bool val)
+	{
+		const auto details = Stat::Id::AllStatsDetails();
+		for (uint32 idx = 0; idx < details.size(); idx++)
+		{
+			if (group_name == details[idx].group)
+			{
+				enabled[idx] = val;
 			}
 		}
 	}
 
 	void System::operator()(StartDisplay msg)
-	{}
+	{
+		SetByGroup(msg.group_name, enabled_, true);
+	}
 
 	void System::operator()(StopDisplay msg)
-	{}
+	{
+		SetByGroup(msg.group_name, enabled_, false);
+	}
 
 }
 #endif

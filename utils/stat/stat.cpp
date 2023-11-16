@@ -7,7 +7,7 @@ namespace Stat
 {
 	struct AllStatsInfo
 	{
-		std::array<Details, 1024> details;
+		std::array<Details, kMaxSupportedStats> details;
 		std::atomic<uint32> filled = 0;
 		std::mutex mutex;
 

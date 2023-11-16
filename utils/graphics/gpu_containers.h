@@ -24,6 +24,7 @@ protected:
 
 public:
 	ID3D12DescriptorHeap* get_heap() const { return heap_.Get(); }
+	ID3D12DescriptorHeap* Get() const { return heap_.Get(); } // to work with macro
 	uint32_t get_capacity() const { return static_cast<uint32_t>(taken_slots_.size()); }
 	bool is_set(uint32_t idx) const { return taken_slots_[idx]; }
 

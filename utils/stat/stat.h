@@ -14,6 +14,8 @@
 #define IF_DO_STAT(X) X
 namespace Stat
 {
+	constexpr uint32 kMaxSupportedStats = 1024;
+
 	enum class EMode : uint8
 	{
 		PerFrame,

@@ -94,7 +94,6 @@ int Win32Application::Run(BaseApp& app, int nCmdShow, UINT width, UINT height)
 	MSG msg = {};
 	while (true)
 	{
-		ImGui_ImplWin32_NewFrame();
 		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);

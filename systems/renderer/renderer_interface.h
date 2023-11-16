@@ -34,12 +34,15 @@ namespace IRenderer
 
 	struct RT_MSG_RegisterMeshes { std::vector<std::shared_ptr<Mesh>> to_register; };
 
+	struct RT_MSG_RegisterDrawHud { std::function<void()> func; };
+
 	using RT_MSG = std::variant<
 		RT_MSG_UpdateCamera,
 		RT_MSG_MeshBuffer,
 		RT_MSG_StaticBuffers,
 		RT_MSG_ToogleFullScreen,
-		RT_MSG_RegisterMeshes>;
+		RT_MSG_RegisterMeshes,
+		RT_MSG_RegisterDrawHud>;
 
 	struct RendererCommon
 	{

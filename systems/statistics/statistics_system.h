@@ -4,6 +4,7 @@
 #include "stat/stat.h"
 #include "small_container.h"
 #include <variant>
+#include <bitset>
 
 #if DO_STAT
 namespace Statistics
@@ -49,8 +50,10 @@ namespace Statistics
 			std::atomic<double> value = 0.0;
 			std::atomic<uint32> counter = 0;
 		};
-		using ValueArray = std::array<StatValue, 1024>;
+		using ValueArray = std::array<StatValue, Stat::kMaxSupportedStats>;
 		Twins<ValueArray> buffers_;
+
+		std::bitset<Stat::kMaxSupportedStats> enabled_;
 	};
 
 	IBaseSystem* CreateSystem();
